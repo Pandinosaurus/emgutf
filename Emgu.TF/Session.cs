@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -43,7 +43,7 @@ namespace Emgu.TF
 
         /// <summary>
         /// Create a Session from a SavedModel. If successful, populates the internal graph with the contents of the Graph and
-        /// <paramref name="metaGraphDef"/> with the MetaGraphDef of the loaded model.
+        /// with the MetaGraphDef of the loaded model.
         /// </summary>
         /// <param name="exportDir">Must be set to the path of the exported SavedModel.</param>
         /// <param name="tags">Must include the set of tags used to identify one MetaGraphDef in the SavedModel. Could be "serve", "tpu", "gpu", "train" or other values.</param>
@@ -329,10 +329,10 @@ namespace Emgu.TF
     public static partial class TfInvoke
     {
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern IntPtr tfeNewSession(IntPtr graph, IntPtr opts, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern IntPtr tfeLoadSessionFromSavedModel(
             IntPtr sessionOptions,
             IntPtr runOptions,
@@ -343,13 +343,13 @@ namespace Emgu.TF
             IntPtr metaGraphDef,
             IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeDeleteSession(ref IntPtr session, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeCloseSession(IntPtr session, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeSessionRun(
             IntPtr session, IntPtr runOptions,
             IntPtr inputOps, IntPtr inputIdx, IntPtr inputValues, int ninputs,
@@ -357,7 +357,7 @@ namespace Emgu.TF
             IntPtr targetOpers, int ntargets,
             IntPtr runMetadata, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeSessionListDevices(IntPtr session, IntPtr nameBuffer, IntPtr typeBuffer, IntPtr memorySizeBuffer, IntPtr status);
     }
 }

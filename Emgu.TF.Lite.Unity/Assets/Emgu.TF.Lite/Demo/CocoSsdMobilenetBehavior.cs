@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using UnityEngine;
@@ -119,7 +119,7 @@ public class CocoSsdMobilenetBehavior : MonoBehaviour
     {
         bool tryUseCamera = false;
 
-        bool loaded = Emgu.TF.Lite.TfLiteInvoke.CheckLibraryLoaded();
+        bool loaded = Emgu.TF.Lite.TfLiteInvoke.Init();
 
         _mobilenet = new Emgu.TF.Lite.Models.CocoSsdMobilenetV3();
 

@@ -1,5 +1,5 @@
 //----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 
@@ -37,7 +37,7 @@ public class MultiboxPeopleDetectorBehavior : MonoBehaviour
     // Use this for initialization
     void Start()
     {
-        bool loaded = TfInvoke.CheckLibraryLoaded();
+        bool loaded = TfInvoke.Init();
         //DisplayText.text = String.Format("Tensorflow library loaded: {0}", loaded);
 
         _liveCameraView = false;
@@ -146,7 +146,7 @@ public class MultiboxPeopleDetectorBehavior : MonoBehaviour
             MultiboxGraph.Result[] results = _multiboxGraph.Detect(imageTensor);
 
             drawableTexture = new Texture2D(texture.width, texture.height, TextureFormat.ARGB32, false);
-            drawableTexture.SetPixels(texture.GetPixels());
+            drawableTexture.SetPixels32(texture.GetPixels32());
             MultiboxGraph.DrawResults(drawableTexture, results, 0.1f, true);
 
             RenderTexture(drawableTexture);

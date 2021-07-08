@@ -1,9 +1,15 @@
 REM @echo off
+@echo on
+
 pushd %~p0
+
 cd ..\..
 
-SET TF_TYPE=FULL
-IF "%1%"=="lite" SET TF_TYPE=LITE
+REM SET TF_TYPE=FULL
+REM IF "%1%"=="lite" SET TF_TYPE=LITE
+
+IF EXIST "lib\x64\tfliteextern.dll" SET HAS_TF_LITE=Y
+IF EXIST "lib\x64\tfextern.dll" SET HAS_TF_FULL=Y
 
 IF "%2%"=="64" ECHO "BUILDING 64bit solution" 
 IF "%2%"=="ARM" ECHO "BUILDING ARM solution"
@@ -64,6 +70,7 @@ IF "%3%"=="doc" ^
 SET CMAKE_CONF_FLAGS=%CMAKE_CONF_FLAGS% -DEMGU_TF_DOCUMENTATION_BUILD:BOOL=TRUE 
 
 IF NOT EXIST b mkdir b
+IF NOT EXIST package mkdir package
 cd b
 
 %CMAKE% .. ^
@@ -73,32 +80,41 @@ cd b
 SET CMAKE_BUILD_TARGET=ALL_BUILD
 IF NOT "%5%"=="package" GOTO CHECK_BUILD_TYPE
 SET CMAKE_BUILD_TARGET=%CMAKE_BUILD_TARGET% PACKAGE
-SET MOVE_PACKAGE_SCRIPT=copy *.zip .. && copy *.exe ..
+SET MOVE_ZIP_SCRIPT=copy *.zip ..\package
+SET MOVE_EXE_SCRIPT=copy *.exe ..\package
 
 :CHECK_BUILD_TYPE
-IF "%TF_TYPE%"=="LITE" goto BUILD_TF_LITE
+REM IF "%TF_TYPE%"=="LITE" goto BUILD_TF_LITE
 
 :BUILD_TF_FULL
 IF NOT "%3%"=="doc" GOTO BUILD_TF_FULL_NUGET
-SET CMAKE_BUILD_TARGET=%CMAKE_BUILD_TARGET% Emgu.TF.Document.Html
+IF "%HAS_TF_FULL%"=="Y" SET CMAKE_BUILD_TARGET=%CMAKE_BUILD_TARGET% Emgu.TF.Document.Html
 
 :BUILD_TF_FULL_NUGET
-IF NOT "%4%"=="nuget" GOTO BUILD
-SET CMAKE_BUILD_TARGET=%CMAKE_BUILD_TARGET% Emgu.TF.Models.nuget Emgu.TF.Protobuf.nuget
-GOTO BUILD
+IF NOT "%4%"=="nuget" GOTO BUILD_TF_LITE
+IF "%HAS_TF_FULL%"=="Y" SET CMAKE_BUILD_TARGET=%CMAKE_BUILD_TARGET% Emgu.TF.Models.nuget Emgu.TF.Protobuf.nuget
+IF "%HAS_TF_FULL%"=="Y" SET MOVE_NUGET_SCRIPT=copy ..\platforms\nuget\*.nupkg ..\package
+REM GOTO BUILD
 
 :BUILD_TF_LITE
 IF NOT "%3%"=="doc" GOTO BUILD_TF_LITE_NUGET
-SET CMAKE_BUILD_TARGET=%CMAKE_BUILD_TARGET% Emgu.TF.Lite.Document.Html 
+IF "%HAS_TF_LITE%"=="Y" SET CMAKE_BUILD_TARGET=%CMAKE_BUILD_TARGET% Emgu.TF.Lite.Document.Html 
+IF "%HAS_TF_LITE%"=="Y" SET ZIP_HELP_SCRIPT=zip package\Help.zip -r Help
 
 :BUILD_TF_LITE_NUGET
 IF NOT "%4%"=="nuget" GOTO BUILD
-SET CMAKE_BUILD_TARGET=%CMAKE_BUILD_TARGET% Emgu.TF.Lite.Models.nuget Emgu.TF.Lite.nuget
+IF "%HAS_TF_LITE%"=="Y" SET CMAKE_BUILD_TARGET=%CMAKE_BUILD_TARGET% Emgu.TF.Lite.Models.nuget Emgu.TF.Lite.nuget
+IF "%HAS_TF_LITE%"=="Y" SET MOVE_NUGET_SCRIPT=copy platforms\nuget\*.nupkg package
 
 :BUILD
 ECHO BUILDING TARGETS: %CMAKE_BUILD_TARGET%
 %CMAKE% --build . --config Release --target %CMAKE_BUILD_TARGET%
-%MOVE_PACKAGE_SCRIPT%
+%MOVE_ZIP_SCRIPT%
+%MOVE_EXE_SCRIPT%
+cd ..
+%MOVE_NUGET_SCRIPT%
+%ZIP_HELP_SCRIPT%
+
 
 :END_OF_SCRIPT
 popd

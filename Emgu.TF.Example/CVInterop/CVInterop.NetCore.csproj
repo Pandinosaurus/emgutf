@@ -1,9 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net5.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
+    <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,10 +14,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Emgu.CV" Version="4.4.0.4061" />
-    <PackageReference Include="Emgu.CV.runtime.windows" Version="4.4.0.4061" />
-    <PackageReference Include="Emgu.CV.UI" Version="4.4.0.4061" />
-    <PackageReference Include="Google.Protobuf" Version="3.11.3" />
+    <PackageReference Include="Emgu.CV" Version="4.5.2.4673" />
+    <PackageReference Include="Emgu.CV.runtime.windows" Version="4.5.2.4673" />
+    <PackageReference Include="Emgu.CV.UI" Version="4.5.1.4349" />
+    <PackageReference Include="Google.Protobuf" Version="3.17.3" />
   </ItemGroup>
 
   <Import Project="..\..\Emgu.TF.Runtime\Windows\Emgu.TF.Runtime.Windows.projitems" Label="Shared" />

@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 
@@ -11,12 +11,12 @@ using System.Runtime.InteropServices;
 namespace Emgu.TF.Lite
 {
     /// <summary>
-    /// Gpu Delegate V2
+    /// Gpu Delegate V2 for Android
     /// </summary>
     public class GpuDelegateV2 : Emgu.TF.Util.UnmanagedObject, IDelegate
     {
         /// <summary>
-        /// Gpu Delegate V2. 
+        /// Gpu Delegate V2 for Android
         /// </summary>
         public GpuDelegateV2()
         {
@@ -45,16 +45,16 @@ namespace Emgu.TF.Lite
 
     public static partial class TfLiteInvoke
     {
-        [DllImport(ExternLibrary, CallingConvention = TfLiteInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfLiteInvoke.TfLiteCallingConvention)]
         internal static extern IntPtr tfeGpuDelegateV2Create();
 
-        [DllImport(ExternLibrary, CallingConvention = TfLiteInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfLiteInvoke.TfLiteCallingConvention)]
         internal static extern void tfeGpuDelegateV2Delete(ref IntPtr delegatePtr);
 
         private static GpuDelegateV2 _gpuDelegateV2;
 
         /// <summary>
-        /// Get tge default Gpu Delegate V2
+        /// Get the default GPU delegate V2 for Android
         /// </summary>
         public static GpuDelegateV2 DefaultGpuDelegateV2
         {
@@ -62,7 +62,9 @@ namespace Emgu.TF.Lite
             {
                 if (_gpuDelegateV2 == null)
                 {
-                    _gpuDelegateV2 = new GpuDelegateV2();
+                    GpuDelegateV2 d = new GpuDelegateV2();
+                    if (d.Ptr != IntPtr.Zero)
+                        _gpuDelegateV2 = d;
                 }
 
                 return _gpuDelegateV2;

@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -15,20 +15,20 @@ namespace Emgu.TF.XamarinForms
     {
         public App()
         {
-            Emgu.TF.Lite.TfLiteInvoke.CheckLibraryLoaded();
+            Emgu.TF.Lite.TfLiteInvoke.Init();
 
             Button multiboxDetectionButton = new Button();
             multiboxDetectionButton.Text = "Coco SSD Mobilenet";
             
             Button mobilenetButton = new Button();
-            mobilenetButton.Text = "Object recognition";
+            mobilenetButton.Text = "Inception Object recognition";
             /*
             Button smartReplyButton = new Button();
             smartReplyButton.Text = "Smart Reply";
             */
 
             Button inceptionButton = new Button();
-            inceptionButton.Text = "Flower recognition";
+            inceptionButton.Text = "Inception Flower recognition";
 
             Button modelCheckerButton = new Button();
             modelCheckerButton.Text = "TF Lite model checker";
@@ -61,18 +61,15 @@ namespace Emgu.TF.XamarinForms
                    }
                };
 
-#if NETFX_CORE
-		    String aboutIcon = "questionmark.png";
-#else
-            String aboutIcon = null;
-#endif
+            NavigationPage navigationPage = new NavigationPage(page);
 
-            MainPage =
-             new NavigationPage(
-                page
-             );
+            //Fix for UWP navigation text
+            if (Device.RuntimePlatform == Device.WPF)
+                navigationPage.BarTextColor = Color.Green;
 
-            ToolbarItem aboutItem = new ToolbarItem("About", aboutIcon,
+            MainPage = navigationPage;
+
+            ToolbarItem aboutItem = new ToolbarItem("About", null,
                () =>
                {
                    MainPage.Navigation.PushAsync(new AboutPage());

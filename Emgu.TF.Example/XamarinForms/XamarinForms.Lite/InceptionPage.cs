@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -70,7 +70,11 @@ namespace Emgu.TF.XamarinForms
         {
             SetMessage("Please wait while the Inception Model is being downloaded...");
             await _inception.Init();
-
+            if (!_inception.Imported)
+            {
+                SetMessage("Failed to initialize mobilenet.");
+                return;
+            }
             SetImage();
             String[] imageFiles = await LoadImages(new string[] { "tulips.jpg" });
 

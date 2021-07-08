@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -22,11 +22,11 @@ using Android.Widget;
 using Android.OS;
 using Android.Graphics;
 using Android.Preferences;
-#elif __UNIFIED__ && !__IOS__
-using AppKit;
-using CoreGraphics;
 #elif __IOS__
 using UIKit;
+using CoreGraphics;
+#elif __MACOS__ 
+using AppKit;
 using CoreGraphics;
 #endif
 

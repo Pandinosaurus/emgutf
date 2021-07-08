@@ -1,5 +1,5 @@
 # --------------------------------------------------------
-#  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.
+#  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.
 # --------------------------------------------------------
 IF(HAVE_FULL_BUILD)
 
@@ -45,6 +45,13 @@ IF (DOTNET_FOUND)
   
   BUILD_DOTNET_PROJ(${PROJECT_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}/${PROJECT_NAME}.csproj" "" ALL)
   
+  IF (EMGU_SIGN_FOUND)
+    IF (WIN32 AND HAVE_WINDESKTOP)
+      EMGU_SIGN_BINARY(${PROJECT_NAME} ${LIBRARY_OUTPUT_PATH}/x64/tfextern.dll)
+    ENDIF()
+    EMGU_SIGN_BINARY(${PROJECT_NAME} ${LIBRARY_OUTPUT_PATH}/${PROJECT_NAME}.dll )
+  ENDIF()
+
   INSTALL(
     FILES 
     ${LIBRARY_OUTPUT_PATH}/${PROJECT_NAME}.xml

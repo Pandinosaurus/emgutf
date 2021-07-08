@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -86,6 +86,13 @@ namespace Emgu.TF.Lite.Models
         /// </summary>
         public event System.Net.DownloadProgressChangedEventHandler OnDownloadProgressChanged;
 
+        /// <summary>
+        /// Initialize the CocoSSDMobileNet model
+        /// </summary>
+        /// <param name="modelFile">The tflite flatbuffer model files</param>
+        /// <param name="labelFile">Text file that contains the labels</param>
+        /// <param name="optDelegate">An optional hardware delegate</param>
+        /// <returns>Async task</returns>
         public virtual
 #if UNITY_EDITOR || UNITY_IOS || UNITY_ANDROID || UNITY_STANDALONE
             IEnumerator
@@ -93,23 +100,29 @@ namespace Emgu.TF.Lite.Models
             async Task
 #endif
             Init(
-                String[] modelFiles, 
-                String downloadUrl,
-                String localModelFolder)
+                DownloadableFile modelFile = null, 
+                DownloadableFile labelFile = null,
+                IDelegate optDelegate = null)
         {
+            if (!Imported)
+            {
+                _downloadManager.Clear();
 
-            _downloadManager.Clear();
-            String url = downloadUrl;
-            String[] fileNames = modelFiles;
-            for (int i = 0; i < fileNames.Length; i++)
-                _downloadManager.AddFile(url + fileNames[i], localModelFolder);
+                _downloadManager.AddFile(modelFile);
+                _downloadManager.AddFile(labelFile);
 
 #if UNITY_EDITOR || UNITY_IOS || UNITY_ANDROID || UNITY_STANDALONE
             yield return _downloadManager.Download();
 #else
-            await _downloadManager.Download();
+                await _downloadManager.Download();
 #endif
-            ImportGraph();
+                if (_downloadManager.AllFilesDownloaded)
+                    ImportGraph(optDelegate);
+                else
+                {
+                    System.Diagnostics.Trace.WriteLine("Failed to download all files");
+                }
+            }
         }
 
         /// <summary>
@@ -123,7 +136,7 @@ namespace Emgu.TF.Lite.Models
             }
         }
 
-        private void ImportGraph()
+        private void ImportGraph(IDelegate optDelegate = null)
         {
 
 #if UNITY_EDITOR || UNITY_IOS || UNITY_ANDROID || UNITY_STANDALONE
@@ -171,12 +184,15 @@ namespace Emgu.TF.Lite.Models
                 if (isAndroid)
                 {
                     //_interpreter.ModifyGraphWithDelegate(TfLiteInvoke.DefaultGpuDelegateV2);
-                    //_interpreter.ModifyGraphWithDelegate(TfLiteInvoke.DefaultNnApiDelegate);
-                    _interpreter.UseNNAPI(false);
+                    _interpreter.ModifyGraphWithDelegate(TfLiteInvoke.DefaultNnApiDelegate);
+                    //_interpreter.UseNNAPI(false);
                     _interpreter.SetNumThreads(4);
                 }
                 //_interpreter.Build(_model);
-
+                if (optDelegate != null)
+                {
+                    _interpreter.ModifyGraphWithDelegate(optDelegate);
+                }
                 Status allocateTensorStatus = _interpreter.AllocateTensors();
                 if (allocateTensorStatus == Status.Error)
                     throw new Exception("Failed to allocate tensor");
@@ -227,7 +243,7 @@ namespace Emgu.TF.Lite.Models
 
             _interpreter.Invoke();
 
-            return ConvertResults(scoreThreshold);
+            return GetResults(scoreThreshold);
         }
 #else
 
@@ -247,7 +263,7 @@ namespace Emgu.TF.Lite.Models
 
             _interpreter.Invoke();
 
-            return ConvertResults(scoreThreshold);
+            return GetResults(scoreThreshold);
         }
 #elif __MACOS__
         /// <summary>
@@ -265,7 +281,7 @@ namespace Emgu.TF.Lite.Models
 
             _interpreter.Invoke();
 
-            return ConvertResults(scoreThreshold);
+            return GetResults(scoreThreshold);
         }
 #endif
         private void ReadImageFileToTensor(String imageFile)
@@ -288,11 +304,16 @@ namespace Emgu.TF.Lite.Models
             //Stopwatch w = Stopwatch.StartNew();
             _interpreter.Invoke();
             //w.Stop();
-            return ConvertResults(scoreThreshold);
+            return GetResults(scoreThreshold);
         }
 #endif
 
-        private RecognitionResult[] ConvertResults(float scoreThreshold)
+        /// <summary>
+        /// Get the result for running the model
+        /// </summary>
+        /// <param name="scoreThreshold">The score threshold, objects that has a score lower than this will not be return</param>
+        /// <returns>A list of recognition results.</returns>
+        public RecognitionResult[] GetResults(float scoreThreshold)
         {
             float[,,] outputLocations = _interpreter.Outputs[0].JaggedData as float[,,];
             float[] classes = _interpreter.Outputs[1].Data as float[];

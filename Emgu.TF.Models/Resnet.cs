@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -9,6 +10,9 @@ using System.Threading.Tasks;
 
 namespace Emgu.TF.Models
 {
+    /// <summary>
+    /// Resnet image recognition model
+    /// </summary>
     public class Resnet : Emgu.TF.Util.UnmanagedObject
     {
         private FileDownloadManager _downloadManager;
@@ -20,6 +24,9 @@ namespace Emgu.TF.Models
         private String _outputName = null;
         private String _savedModelDir = null;
 
+        /// <summary>
+        /// Get the TF graph from the resnet model
+        /// </summary>
         public Graph Graph
         {
             get
@@ -30,6 +37,20 @@ namespace Emgu.TF.Models
             }
         }
 
+        /// <summary>
+        /// Return true if the graph has been imported
+        /// </summary>
+        public bool Imported
+        {
+            get
+            {
+                return Graph != null;
+            }
+        }
+
+        /// <summary>
+        /// Get the MetaGraphDefBuffer
+        /// </summary>
         public Buffer MetaGraphDefBuffer
         {
             get
@@ -80,15 +101,101 @@ namespace Emgu.TF.Models
             _downloadManager.OnDownloadProgressChanged += onDownloadProgressChanged;
         }
 
-
         private void onDownloadProgressChanged(object sender, DownloadProgressChangedEventArgs e)
         {
             if (OnDownloadProgressChanged != null)
                 OnDownloadProgressChanged(sender, e);
         }
 
+        /// <summary>
+        /// Callback when the model download progress is changed.
+        /// </summary>
         public event System.Net.DownloadProgressChangedEventHandler OnDownloadProgressChanged;
 
+        /// <summary>
+        /// Initiate the graph by checking if the model file exist locally, if not download the graph from internet.
+        /// </summary>
+        /// <param name="modelFile">The tensorflow graph.</param>
+        /// <param name="labelFile">the object class labels.</param>
+        /// <param name="inputName">The name of the input tensor</param>
+        /// <param name="outputName">The name of the output tensor</param>
+        public
+#if UNITY_EDITOR || UNITY_IOS || UNITY_ANDROID || UNITY_STANDALONE
+            IEnumerator
+#else
+            async Task
+#endif
+            Init(
+                DownloadableFile modelFile = null,
+                DownloadableFile labelFile = null,
+                String inputName = null,
+                String outputName = null
+            )
+        {
+            if (_session == null)
+            {
+                _inputName = inputName == null ? "serving_default_input_1" : inputName;
+                _outputName = outputName == null ? "StatefulPartitionedCall" : outputName;
+
+                _downloadManager.Clear();
+
+                String defaultLocalSubfolder = "Resnet";
+                if (modelFile == null)
+                {
+                    modelFile = new DownloadableFile(
+                        "https://github.com/emgucv/models/raw/master/resnet/resnet_50_classification_1.zip",
+                        defaultLocalSubfolder,
+                        "861BA3BA5F18D8985A5611E5B668A0A020998762DD5A932BD4D0BCBBC1823A83"
+                    );
+                }
+
+                if (labelFile == null)
+                {
+                    labelFile = new DownloadableFile(
+                        "https://github.com/emgucv/models/raw/master/resnet/ImageNetLabels.txt",
+                        defaultLocalSubfolder,
+                        "536FEACC519DE3D418DE26B2EFFB4D75694A8C4C0063E36499A46FA8061E2DA9"
+                    );
+                }
+
+                _downloadManager.AddFile(modelFile);
+                _downloadManager.AddFile(labelFile);
+
+#if UNITY_EDITOR || UNITY_IOS || UNITY_ANDROID || UNITY_STANDALONE
+                yield return _downloadManager.Download();
+#else
+                await _downloadManager.Download();
+#endif
+                if (_downloadManager.AllFilesDownloaded)
+                {
+                    System.IO.FileInfo localZipFile = new System.IO.FileInfo(_downloadManager.Files[0].LocalFile);
+
+                    _savedModelDir = System.IO.Path.Combine(localZipFile.DirectoryName, "SavedModel");
+                    if (!System.IO.Directory.Exists(_savedModelDir))
+                    {
+                        System.IO.Directory.CreateDirectory(_savedModelDir);
+
+                        System.IO.Compression.ZipFile.ExtractToDirectory(
+                            localZipFile.FullName,
+                            _savedModelDir);
+                    }
+
+                    CreateSession();
+                } else
+                {
+                    System.Diagnostics.Trace.WriteLine("Failed to download files");
+                }    
+            }
+        }
+
+        /// <summary>
+        /// Initiate the graph by checking if the model file exist locally, if not download the graph from internet.
+        /// </summary>
+        /// <param name="modelFiles">An array where the first file is the tensorflow graph and the second file are the object class labels. </param>
+        /// <param name="downloadUrl">The url where the file can be downloaded</param>
+        /// <param name="inputName">The input operation name. Default to "input" if not specified.</param>
+        /// <param name="outputName">The output operation name. Default to "output" if not specified.</param>
+        /// <param name="localModelFolder">The local folder to store the model</param>
         public
 #if UNITY_EDITOR || UNITY_IOS || UNITY_ANDROID || UNITY_STANDALONE
             System.Collections.IEnumerator
@@ -96,47 +203,37 @@ namespace Emgu.TF.Models
             async Task
 #endif
             Init(
-                String[] modelFiles = null, 
-                String downloadUrl = null,
+                String[] modelFiles,
+                String downloadUrl,
                 String inputName = null,
                 String outputName = null,
                 String localModelFolder = "Resnet")
         {
-            if (_session == null)
+
+            DownloadableFile[] downloadableFiles;
+            if (modelFiles == null)
             {
-                _inputName = inputName == null ? "serving_default_input_1" : inputName;
-                _outputName = outputName == null ? "StatefulPartitionedCall" : outputName;
-                
-                _downloadManager.Clear();
+                downloadableFiles = new DownloadableFile[2];
+            }
+            else
+            {
                 String url = downloadUrl == null
                     ? "https://github.com/emgucv/models/raw/master/resnet/"
                     : downloadUrl;
                 String[] fileNames = modelFiles == null
                     ? new string[] { "resnet_50_classification_1.zip", "ImageNetLabels.txt" }
                     : modelFiles;
+                downloadableFiles = new DownloadableFile[fileNames.Length];
                 for (int i = 0; i < fileNames.Length; i++)
-                    _downloadManager.AddFile(url + fileNames[i], localModelFolder);
+                    downloadableFiles[i] = new DownloadableFile(url + fileNames[i], localModelFolder);
+            }
 
 #if UNITY_EDITOR || UNITY_IOS || UNITY_ANDROID || UNITY_STANDALONE
-                yield return _downloadManager.Download();
+                return Init(downloadableFiles[0], downloadableFiles[1], inputName, outputName);
 #else
-                await _downloadManager.Download();
-
-                System.IO.FileInfo localZipFile = new System.IO.FileInfo( _downloadManager.Files[0].LocalFile );
-
-                _savedModelDir = System.IO.Path.Combine(localZipFile.DirectoryName, "SavedModel");
-                if (!System.IO.Directory.Exists(_savedModelDir))
-                {
-                    System.IO.Directory.CreateDirectory(_savedModelDir);
-
-                    System.IO.Compression.ZipFile.ExtractToDirectory(
-                        localZipFile.FullName,
-                        _savedModelDir);
-                }
-
-                CreateSession();
+            await Init(downloadableFiles[0], downloadableFiles[1], inputName, outputName);
 #endif
-            }
+
         }
 
         private void CreateSession()
@@ -157,16 +254,16 @@ namespace Emgu.TF.Models
 #if UNITY_EDITOR || UNITY_IOS || UNITY_ANDROID || UNITY_STANDALONE
             UnityEngine.Debug.Log("Model imported");
 #endif
-            
+
             _labels = File.ReadAllLines(_downloadManager.Files[1].LocalFile);
         }
 
         /// <summary>
         /// Pass the image tensor to the graph and return the probability that the object in image belongs to each of the object class.
         /// </summary>
-        /// <param name="image">The image to be classified</param>
+        /// <param name="imageTensor">The tensor that contains the images to be classified</param>
         /// <returns>The object classes, sorted by probability from high to low</returns>
-        public RecognitionResult[] Recognize(Tensor image)
+        public RecognitionResult[][] Recognize(Tensor imageTensor)
         {
             Operation input = _session.Graph[_inputName];
             if (input == null)
@@ -176,11 +273,22 @@ namespace Emgu.TF.Models
             if (output == null)
                 throw new Exception(String.Format("Could not find output operation '{0}' in the graph", _outputName));
 
-            Tensor[] finalTensor = _session.Run(new Output[] { input }, new Tensor[] { image },
+            Tensor[] finalTensor = _session.Run(new Output[] { input }, new Tensor[] { imageTensor },
                 new Output[] { output });
-            float[] probability = finalTensor[0].GetData(false) as float[];
-            //return probability;
-            return SortResults(probability);
+            float[,] probability = finalTensor[0].GetData(true) as float[,];
+
+            int imageCount = probability.GetLength(0);
+            int probLength = probability.GetLength(1);
+            RecognitionResult[][] results = new RecognitionResult[imageCount][];
+            for (int i = 0; i < imageCount; i++)
+            {
+                float[] p = new float[probLength];
+                for (int j = 0; j < p.Length; j++)
+                    p[j] = probability[i, j];
+                results[i] = SortResults(p);
+            }
+
+            return results;
         }
 
         /// <summary>
@@ -199,7 +307,7 @@ namespace Emgu.TF.Models
             RecognitionResult[] results = new RecognitionResult[Math.Min(_labels.Length, probabilities.Length)];
             for (int i = 0; i < results.Length; i++)
             {
-                results[i] = new RecognitionResult(_labels[ (i+1) % _labels.Length ], probabilities[i]);
+                results[i] = new RecognitionResult(_labels[(i + 1) % _labels.Length], probabilities[i]);
             }
             Array.Sort<RecognitionResult>(results, new Comparison<RecognitionResult>((a, b) => -a.Probability.CompareTo(b.Probability)));
             return results;
@@ -232,7 +340,7 @@ namespace Emgu.TF.Models
         }
 
         /// <summary>
-        /// Release the memory associated with this inception graph
+        /// Release the memory associated with the Resnet
         /// </summary>
         protected override void DisposeObject()
         {

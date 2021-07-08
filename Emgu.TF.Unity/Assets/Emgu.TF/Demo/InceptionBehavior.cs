@@ -1,5 +1,5 @@
 //----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using UnityEngine;
@@ -37,15 +37,15 @@ public class InceptionBehavior : MonoBehaviour
         if (!_inceptionGraph.Imported)
             return;
         Tensor imageTensor = ImageIO.ReadTensorFromTexture2D(texture, 224, 224, 128.0f, 1.0f, true);
-        Inception.RecognitionResult[] results = _inceptionGraph.Recognize(imageTensor);
-        _displayMessage = String.Format("Object is {0} with {1}% probability.", results[0].Label, results[0].Probability*100);
+        Inception.RecognitionResult[][] results = _inceptionGraph.Recognize(imageTensor);
+        _displayMessage = String.Format("Object is {0} with {1}% probability.", results[0][0].Label, results[0][0].Probability*100);
     }
 
 
     // Use this for initialization
     void Start()
     {
-        bool loaded = TfInvoke.CheckLibraryLoaded();
+        bool loaded = TfInvoke.Init();
         _inceptionGraph = new Inception();
         _liveCameraView = false;
         /*

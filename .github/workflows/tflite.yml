@@ -9,20 +9,19 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
+    
+    # one day time out
+    timeout-minutes: 1440
 
     steps:
     - uses: actions/checkout@v2
-    - name: Setup .NET Core
-      uses: actions/setup-dotnet@v1
-      with:
-        dotnet-version: 3.1.101
     - name: Check out submodules
       run: git submodule update --init --recursive
     - name: Build Emgu TF Lite native binary
-      run: ./platforms/ubuntu/docker/docker_build_tflite
+      run: ./platforms/ubuntu/20.04/bazel_build_tflite
     - name: Build Emgu TF Lite package
-      run: ./platforms/ubuntu/docker/docker_build_emgutf
+      run: ./platforms/ubuntu/20.04/build_emgutf package
     - name: Create Emgu TF Lite artifact folder
       run: mkdir -p emgutf_lite_packages
     - uses: actions/upload-artifact@v2
@@ -33,7 +32,3 @@ jobs:
       with:
         name: emgutflite-ubuntu-nuget-package
         path: ${{ github.workspace }}/platforms/nuget/*.nupkg 
-    - name: clean up the source folder
-      run: miscellaneous/git-clean
-    - name: Build Emgu TF Lite Android arm64-v8a native binary
-      run: ./platforms/ubuntu/docker/docker_build_tflite_android arm64 arm64-v8a

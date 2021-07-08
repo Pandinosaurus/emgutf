@@ -1,5 +1,5 @@
 //----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -12,11 +12,7 @@ namespace Emgu.TF
         /// <summary>
         /// The file name of the tfextern library
         /// </summary>
-#if UNITY_EDITOR_OSX
-        public const string ExternLibrary = "Assets/Emgu.TF/Plugins/emgutf.bundle/Contents/MacOS/libtfextern.dylib";
-#elif UNITY_STANDALONE_OSX
-        public const string ExternLibrary = "@executable_path/../Plugins/emgutf.bundle/Contents/MacOS/libtfextern.dylib";
-#elif (__IOS__ || UNITY_IPHONE) && (!UNITY_EDITOR)
+#if (__IOS__ || UNITY_IPHONE) && (!UNITY_EDITOR)
         public const string ExternLibrary = "__Internal";
 #else
         public const string ExternLibrary = "tfextern";

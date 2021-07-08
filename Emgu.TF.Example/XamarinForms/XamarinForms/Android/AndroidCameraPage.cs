@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 #if __ANDROID__
@@ -32,7 +32,7 @@ namespace Emgu.TF.XamarinForms
         {
             _imageView = new ImageView(Android.App.Application.Context);
             Xamarin.Forms.View xView = _imageView.ToView();
-            xView.BackgroundColor = Xamarin.Forms.Color.Aqua;
+            //xView.BackgroundColor = Xamarin.Forms.Color.Aqua;
             MainLayout.Children.Add(xView);
             base.DisplayImage.IsVisible = false;
             

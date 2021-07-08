@@ -1,12 +1,16 @@
 # --------------------------------------------------------
-#  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.
+#  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.
 # --------------------------------------------------------
 
 IF((HAVE_WINDESKTOP_X64 OR HAVE_LINUX) AND DOTNET_FOUND)
   PROJECT(Emgu.TF.CodeGen.NetCore)
   
-  BUILD_DOTNET_PROJ(${PROJECT_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}/${PROJECT_NAME}.csproj" "" ALL)
-  
+  IF(HAVE_WINDESKTOP_X64 AND WIN32)
+    #Force to run in 64-bit for windows.
+    BUILD_DOTNET_PROJ(${PROJECT_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}/${PROJECT_NAME}.csproj" "/p:Platform=x64" ALL)
+  else()
+    BUILD_DOTNET_PROJ(${PROJECT_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}/${PROJECT_NAME}.csproj" "" ALL)
+  ENDIF()
   IF(HAVE_WINDESKTOP_X64 AND WIN32)
     ADD_CUSTOM_COMMAND(TARGET ${PROJECT_NAME} 
       POST_BUILD

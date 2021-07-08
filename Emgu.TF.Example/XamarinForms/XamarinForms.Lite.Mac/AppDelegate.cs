@@ -2,7 +2,7 @@
 using AppKit;
 using Foundation;
 
-namespace XamarinForms.Lite.OSX
+namespace XamarinForms.Lite.Mac
 {
     [Register("AppDelegate")]
     public class AppDelegate : Xamarin.Forms.Platform.MacOS.FormsApplicationDelegate
@@ -39,7 +39,7 @@ namespace XamarinForms.Lite.OSX
             // Insert code here to initialize your application
             Xamarin.Forms.Forms.Init();
 
-            Emgu.TF.Lite.TfLiteInvoke.CheckLibraryLoaded();
+            Emgu.TF.Lite.TfLiteInvoke.Init();
 
             var app = new Emgu.TF.XamarinForms.App();
             LoadApplication(app);

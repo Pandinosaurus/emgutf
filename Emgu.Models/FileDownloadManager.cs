@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -48,9 +48,33 @@ namespace Emgu.Models
         /// </summary>
         /// <param name="url">The url of the file to be downloaded</param>
         /// <param name="localSubfolder">The local subfolder name to download the model to.</param>
-        public void AddFile(String url, String localSubfolder)
+        /// <param name="sha256Hash">The sha256 hash value for the file</param>
+        public void AddFile(String url, String localSubfolder, String sha256Hash = null)
         {
-            _files.Add(new DownloadableFile(url, localSubfolder));
+            _files.Add(new DownloadableFile(url, localSubfolder, sha256Hash));
+        }
+
+        /// <summary>
+        /// Add a file to download
+        /// </summary>
+        /// <param name="downloadableFile">The file to be downloaded</param>
+        public void AddFile(DownloadableFile downloadableFile)
+        {
+            _files.Add(downloadableFile);
+        }
+
+        public bool AllFilesDownloaded
+        {
+            get
+            {
+                bool allDownloaded = true;
+                foreach (DownloadableFile file in _files)
+                {
+                    allDownloaded &= file.IsLocalFileValid;
+                }
+
+                return allDownloaded;
+            }
         }
 
         /// <summary>
@@ -71,12 +95,11 @@ namespace Emgu.Models
         {
             foreach (DownloadableFile df in _files)
             {
-                String localFileName = df.LocalFile;
-
-                //Uncomment the following to force redownload every time
+                //Uncomment the following to force re-download every time
                 //File.Delete(localFileName);
-                if (!System.IO.File.Exists(localFileName) || !(new FileInfo(localFileName).Length > 0))
+                if (!df.IsLocalFileValid)
                 {
+                    String localFileName = df.LocalFile;
                     using (UnityEngine.Networking.UnityWebRequest webclient = new UnityEngine.Networking.UnityWebRequest(df.Url))
                     {
                         CurrentWebClient = webclient;
@@ -84,17 +107,20 @@ namespace Emgu.Models
 
                         webclient.downloadHandler = new UnityEngine.Networking.DownloadHandlerFile(localFileName);
                         yield return webclient.SendWebRequest();
-                        if (webclient.isNetworkError || webclient.isHttpError)
+                        if (webclient.result == UnityEngine.Networking.UnityWebRequest.Result.ConnectionError 
+                            || webclient.result == UnityEngine.Networking.UnityWebRequest.Result.ProtocolError)
                         {
                             UnityEngine.Debug.LogError(webclient.error);
                         }
 
-                        if (!System.IO.File.Exists(localFileName) || !(new FileInfo(localFileName).Length > 0))
+                        if (df.IsLocalFileValid)
                         {
-                            UnityEngine.Debug.LogError(String.Format("File {0} is empty, failed to download file.", localFileName));
+                            UnityEngine.Debug.Log("File successfully downloaded and saved to " + localFileName);
                         }
-
-                        UnityEngine.Debug.Log("File successfully downloaded and saved to " + localFileName);
+                        else
+                        {
+                            UnityEngine.Debug.LogError(String.Format("Failed to download file {0}.", localFileName));
+                        }
                         CurrentWebClient = null;
 
                     }
@@ -156,7 +182,7 @@ namespace Emgu.Models
 
             //uncomment the following line to force re-download every time.
             //File.Delete(downloadableFile.LocalFile);
-            if (!File.Exists(downloadableFile.LocalFile) || new FileInfo(downloadableFile.LocalFile).Length == 0)
+            if (!downloadableFile.IsLocalFileValid)
             {
                 try
                 {
@@ -177,9 +203,11 @@ namespace Emgu.Models
                 }
                 catch (Exception e)
                 {
-                    if (File.Exists(downloadableFile.LocalFile))
+                    if (!downloadableFile.IsLocalFileValid)
+                    {
                         //The downloaded file may be corrupted, should delete it
                         File.Delete(downloadableFile.LocalFile);
+                    }
 
                     if (retry > 0)
                     {
@@ -187,11 +215,7 @@ namespace Emgu.Models
                     }
                     else
                     {
-#if UNITY_EDITOR || UNITY_IOS || UNITY_ANDROID || UNITY_STANDALONE
-                        UnityEngine.Debug.Log(e.StackTrace);
-#else
                         Trace.WriteLine(e);
-#endif
                         throw;
                     }
                 }

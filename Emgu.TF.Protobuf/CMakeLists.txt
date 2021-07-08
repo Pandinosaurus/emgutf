@@ -1,5 +1,5 @@
 # --------------------------------------------------------
-#  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.
+#  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.
 # --------------------------------------------------------
 
 
@@ -46,7 +46,7 @@ IF (DOTNET_FOUND AND (TARGET Emgu.TF.Netstandard))
       ADD_CUSTOM_COMMAND(TARGET ${PROJECT_NAME} 
 	    PRE_BUILD
 	    COMMAND wget ${PROTOBUF_TOOLS_NUGET_URL} -O protobuf.tools.zip
-	    COMMAND unzip -u protobuf.tools.zip -d protobuf.tools
+	    COMMAND unzip -uo protobuf.tools.zip -d protobuf.tools
         COMMENT "Downloading and extractiong protobuf from ${PROTOBUF_TOOLS_NUGET_URL} to 'protobuf.tools' folder under ${CMAKE_CURRENT_SOURCE_DIR};"
 	    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
       ADD_CUSTOM_COMMAND(TARGET ${PROJECT_NAME} 
@@ -148,6 +148,10 @@ IF (DOTNET_FOUND AND (TARGET Emgu.TF.Netstandard))
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/"
     )
   
+  IF (EMGU_SIGN_FOUND)
+    EMGU_SIGN_BINARY(${PROJECT_NAME} ${LIBRARY_OUTPUT_PATH}/${PROJECT_NAME}.dll )
+  ENDIF()
+
   INSTALL(
     FILES 
     ${LIBRARY_OUTPUT_PATH}/${PROJECT_NAME}.xml

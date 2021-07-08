@@ -1,5 +1,5 @@
 //----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using UnityEngine;
@@ -31,7 +31,7 @@ public class MobilenetBehavior : MonoBehaviour
     IEnumerator Start()
     {
         bool tryUseCamera = true;
-        bool loaded = Emgu.TF.Lite.TfLiteInvoke.CheckLibraryLoaded();
+        bool loaded = Emgu.TF.Lite.TfLiteInvoke.Init();
 
         _mobilenet = new Emgu.TF.Lite.Models.Mobilenet();
 

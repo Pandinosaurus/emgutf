@@ -27,7 +27,7 @@ namespace XamarinForms.OSX
 			var rect = new CoreGraphics.CGRect(200, 1000, 1024, 768);
 			//var rect = NSWindow.FrameRectFor(NSScreen.MainScreen.Frame, style);
 			_window = new NSWindow(rect, style, NSBackingStore.Buffered, false);
-			_window.Title = "Emgu TF Xamarin Forms for Mac";
+			_window.Title = "Emgu TF Demo for Mac";
 			//_window.TitleVisibility = NSWindowTitleVisibility.Hidden;
 		}
 
@@ -42,7 +42,7 @@ namespace XamarinForms.OSX
 			// Insert code here to initialize your application
 			Xamarin.Forms.Forms.Init();
 
-            Emgu.TF.TfInvoke.CheckLibraryLoaded();
+            Emgu.TF.TfInvoke.Init();
 
 			var app = new Emgu.TF.XamarinForms.App();
 			LoadApplication(app);

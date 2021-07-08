@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -78,15 +78,15 @@ namespace Emgu.TF.Models
         }
 
         /// <summary>
-        /// Callback when graph download progress is changed.
+        /// Callback when model download progress is changed.
         /// </summary>
         public event System.Net.DownloadProgressChangedEventHandler OnDownloadProgressChanged;
 
         /// <summary>
-        /// Initiate the graph by checking if the graph file exit on disk, if not download the graph from internet.
+        /// Initiate the graph by checking if the model file exist locally, if not download the graph from internet.
         /// </summary>
-        /// <param name="modelFiles">An array where the first file is the tensorflow graph and the second file are the object class labels. </param>
-        /// <param name="downloadUrl">The url where the file can be downloaded</param>
+        /// <param name="modelFile">The tensorflow graph.</param>
+        /// <param name="labelFile">the object class labels.</param>
         /// <param name="inputName">The input operation name. Default to "input" if not specified.</param>
         /// <param name="outputName">The output operation name. Default to "output" if not specified.</param>
         public
@@ -95,28 +95,96 @@ namespace Emgu.TF.Models
 #else
             async Task
 #endif
-            Init(String[] modelFiles = null, 
-                String downloadUrl = null, 
-                String inputName = null, 
-                String outputName = null,
+            Init(DownloadableFile modelFile = null,
+                DownloadableFile labelFile = null,
+                String inputName = null,
+                String outputName = null
+            )
+        {
+            if (_graph == null)
+            {
+                _inputName = inputName == null ? "input" : inputName;
+                _outputName = outputName == null ? "output" : outputName;
+
+                _downloadManager.Clear();
+
+                String defaultLocalSubfolder = "Inception";
+                if (modelFile == null)
+                {
+                    modelFile = new DownloadableFile(
+                        "https://github.com/emgucv/models/raw/master/inception/tensorflow_inception_graph.pb",
+                        defaultLocalSubfolder,
+                        "A39B08B826C9D5A5532FF424C03A3A11A202967544E389ACA4B06C2BD8AEF63F"
+                    );
+                }
+
+                if (labelFile == null)
+                {
+                    labelFile = new DownloadableFile(
+                        "https://github.com/emgucv/models/raw/master/inception/imagenet_comp_graph_label_strings.txt",
+                        defaultLocalSubfolder,
+                        "DA2A31ECFE9F212AE8DD07379B11A74CB2D7A110EBA12C5FC8C862A65B8E6606"
+                    );
+                }
+
+                _downloadManager.AddFile(modelFile);
+                _downloadManager.AddFile(labelFile);
+
+#if UNITY_EDITOR || UNITY_IOS || UNITY_ANDROID || UNITY_STANDALONE
+                yield return _downloadManager.Download();
+#else
+                await _downloadManager.Download();
+#endif
+                if (_downloadManager.AllFilesDownloaded)
+                    ImportGraph();
+                else
+                    System.Diagnostics.Trace.WriteLine("Failed to download files");
+
+            }
+        }
+
+
+        /// <summary>
+        /// Initiate the graph by checking if the model file exist locally, if not download the graph from internet.
+        /// </summary>
+        /// <param name="modelFiles">An array where the first file is the tensorflow graph and the second file is the object class labels. </param>
+        /// <param name="downloadUrl">The url where the file can be downloaded</param>
+        /// <param name="inputName">The input operation name. Default to "input" if not specified.</param>
+        /// <param name="outputName">The output operation name. Default to "output" if not specified.</param>
+        /// <param name="localModelFolder">The local folder to store the model</param>
+        public
+#if UNITY_EDITOR || UNITY_IOS || UNITY_ANDROID || UNITY_STANDALONE
+            IEnumerator
+#else
+            async Task
+#endif
+            Init(String[] modelFiles, 
+                String downloadUrl, 
+                String inputName, 
+                String outputName,
                 String localModelFolder = "Inception" 
                 )
         {
-            _inputName = inputName == null ? "input" : inputName;
-            _outputName = outputName == null ? "output" : outputName;
-
-            _downloadManager.Clear();
-            String url = downloadUrl == null ? "https://github.com/emgucv/models/raw/master/inception/" : downloadUrl;
-            String[] fileNames = modelFiles == null ? new string[] { "tensorflow_inception_graph.pb", "imagenet_comp_graph_label_strings.txt" } : modelFiles;
-            for (int i = 0; i < fileNames.Length; i++)
-                _downloadManager.AddFile(url + fileNames[i], localModelFolder);
+            DownloadableFile[] downloadableFiles;
+            if (modelFiles == null)
+            {
+                downloadableFiles = new DownloadableFile[2];
+            }
+            else
+            {
+                String url = downloadUrl == null ? "https://github.com/emgucv/models/raw/master/inception/" : downloadUrl;
+                String[] fileNames = modelFiles == null ? new string[] { "tensorflow_inception_graph.pb", "imagenet_comp_graph_label_strings.txt" } : modelFiles;
+                downloadableFiles = new DownloadableFile[fileNames.Length];
+                for (int i = 0; i < fileNames.Length; i++)
+                    downloadableFiles[i] = new DownloadableFile(url + fileNames[i], localModelFolder);
+            }
 
 #if UNITY_EDITOR || UNITY_IOS || UNITY_ANDROID || UNITY_STANDALONE
-            yield return _downloadManager.Download();
+            return Init(downloadableFiles[0], downloadableFiles[1], inputName, outputName);
 #else
-            await _downloadManager.Download();
+            await Init(downloadableFiles[0], downloadableFiles[1], inputName, outputName);
 #endif
-            ImportGraph();
+
         }
 
         /// <summary>
@@ -159,7 +227,7 @@ namespace Emgu.TF.Models
         }
 
         /// <summary>
-        /// Get the graph from this inception model
+        /// Get the TF graph from this inception model
         /// </summary>
         public Graph Graph
         {
@@ -178,11 +246,19 @@ namespace Emgu.TF.Models
         }
 
         /// <summary>
+        /// Get the Tensorflow session
+        /// </summary>
+        public Session Session
+        {
+            get { return _session; }
+        }
+
+        /// <summary>
         /// Pass the image tensor to the graph and return the probability that the object in image belongs to each of the object class.
         /// </summary>
-        /// <param name="image">The image to be classified</param>
+        /// <param name="imageTensor">The tensor that contains the images to be classified</param>
         /// <returns>The object classes, sorted by probability from high to low</returns>
-        public RecognitionResult[] Recognize(Tensor image)
+        public RecognitionResult[][] Recognize(Tensor imageTensor)
         {
             Operation input = _graph[_inputName];
             if (input == null)
@@ -192,11 +268,20 @@ namespace Emgu.TF.Models
             if (output == null)
                 throw new Exception(String.Format("Could not find output operation '{0}' in the graph", _outputName));
 
-            Tensor[] finalTensor = _session.Run(new Output[] { input }, new Tensor[] { image },
+            Tensor[] finalTensor = _session.Run(new Output[] { input }, new Tensor[] { imageTensor },
                 new Output[] { output });
-            float[] probability = finalTensor[0].GetData(false) as float[];
-            //return probability;
-            return SortResults(probability);
+            float[,] probability = finalTensor[0].GetData(true) as float[,];
+            int imageCount = probability.GetLength(0);
+            int probLength = probability.GetLength(1);
+            RecognitionResult[][] results = new RecognitionResult[imageCount][];
+            for (int i = 0; i < imageCount; i++)
+            {
+                float[] p = new float[probLength];
+                for (int j = 0; j < p.Length; j++)
+                    p[j] = probability[i, j];
+                results[i] = SortResults(p);
+            }
+            return results;
         }
 
         /// <summary>

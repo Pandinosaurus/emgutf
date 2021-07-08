@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -37,12 +37,12 @@ namespace Emgu.TF.XamarinForms
     public class CocoSsdMobilenetPage : ButtonTextImagePage
     {
         private CocoSsdMobilenetV3 _mobilenet;
-
         public CocoSsdMobilenetPage()
            : base()
         {
 #if __MACOS__ || __IOS__
             AllowAvCaptureSession = true;
+            outputRecorder.BufferReceived += OutputRecorder_BufferReceived;
 #endif
             var button = this.TopButton;
             button.Text = "Perform Object Detection";
@@ -50,10 +50,6 @@ namespace Emgu.TF.XamarinForms
 
             _mobilenet = new CocoSsdMobilenetV3();
             _mobilenet.OnDownloadProgressChanged += onDownloadProgressChanged;
-
-#if __MACOS__ || __IOS__
-            outputRecorder.BufferReceived += OutputRecorder_BufferReceived;
-#endif
 
         }
 
@@ -147,6 +143,11 @@ namespace Emgu.TF.XamarinForms
 #endif
             {
                 await _mobilenet.Init();
+                if (!_mobilenet.Imported)
+                {
+                    SetMessage("Failed to initialize mobilenet.");
+                    return;
+                }
             }
 #if !DEBUG
                 catch (Exception e)

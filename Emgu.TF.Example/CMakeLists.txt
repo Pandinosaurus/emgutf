@@ -1,5 +1,5 @@
 # --------------------------------------------------------
-#  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.
+#  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.
 # --------------------------------------------------------
 
 
@@ -400,4 +400,5 @@ ENDIF()
 #add_subdirectory(MultiboxPeopleDetection)
 #add_subdirectory(InceptionObjectRecognition)
 add_subdirectory(CVInterop)
+add_subdirectory(CVInterop.Lite)
 

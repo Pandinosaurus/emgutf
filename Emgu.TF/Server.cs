@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -24,7 +24,7 @@ namespace Emgu.TF
         /// <summary>
         /// Construct and return the tensorflow Server
         /// </summary>
-        /// <param name="proto">Serialized FunctionDef</param>
+        /// <param name="proto">Serialized ServerDef protocol buffer</param>
         /// <param name="status">The status</param>
         public Server(byte[] proto, Status status = null)
         {
@@ -98,20 +98,20 @@ namespace Emgu.TF
     
     public static partial class TfInvoke
     {
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern IntPtr tfeNewServer(IntPtr proto, int protoLen, IntPtr status);
 
     
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeDeleteServer(ref IntPtr function);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeServerStart(IntPtr server, IntPtr status);
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeServerStop(IntPtr server, IntPtr status);
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeServerJoin(IntPtr server, IntPtr status);
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern IntPtr tfeServerTarget(IntPtr server);
 
     }

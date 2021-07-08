@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2021 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -56,7 +56,6 @@ namespace Emgu.TF.XamarinForms
                 _resnet = new Resnet(null, so);
                 _resnet.OnDownloadProgressChanged += onProgressChanged;
 
-                
                 //The resnet model
                 await _resnet.Init();
                 
@@ -96,6 +95,14 @@ namespace Emgu.TF.XamarinForms
 
                     SetMessage("Please wait while we download / initialize the model ...");
                     await Init(this.onDownloadProgressChanged);
+
+                    if (_resnet == null || (!_resnet.Imported))
+                    {
+                        _resnet = null;
+                        SetMessage("Failed to import resnet.");
+                        return;
+                    }
+
                     SetMessage("Model Loaded.");
 
                     String[] images;
@@ -110,10 +117,10 @@ namespace Emgu.TF.XamarinForms
 
                     if (images[0] == "Camera")
                     {
-                        //TODO: handle camera stream
+                        //handle camera stream
 #if __ANDROID__
                         this.TopButton.Text = _StopCameraButtonText;
-                        StartCapture(async delegate (Object sender, Android.Graphics.Bitmap m)
+                        StartCapture(async delegate (Object s, Android.Graphics.Bitmap m)
                         {
                             //Skip the frame if busy, 
                             //Otherwise too many frames arriving and will eventually saturated the memory.
@@ -126,22 +133,10 @@ namespace Emgu.TF.XamarinForms
                                     Resnet.RecognitionResult result;
                                     //await Task.Run(() =>
                                     //{
-                                        Tensor imageTensor;
-
-                                        if (_model == Model.Flower)
-                                        {
-                                            imageTensor = new Tensor(DataType.Float, new int[] {1, 299, 299, 3} );
-                                            Emgu.Models.NativeImageIO.ReadBitmapToTensor<float>(m, imageTensor.DataPointer, 299, 299, 0.0f,
-                                                1.0f / 255.0f, false, false);
-
-                                        }
-                                        else
-                                        {
-                                            imageTensor = new Tensor(DataType.Float, new int[] { 1, 224, 224, 3 });
-                                            Emgu.Models.NativeImageIO.ReadBitmapToTensor<float>(m, imageTensor.DataPointer, 224, 224, 128.0f, 
-                                                    1.0f);
-                                        }
-                                        result = _resnet.Recognize(imageTensor)[0];
+                                        Tensor imageTensor = new Tensor(DataType.Float, new int[] { 1, 224, 224, 3 });
+                                        Emgu.Models.NativeImageIO.ReadBitmapToTensor<float>(m, imageTensor.DataPointer, 224, 224, 0.0f,
+                                            1.0f / 255.0f, false, false);
+                                        result = _resnet.Recognize(imageTensor)[0][0];
                                     //});
                                     watch.Stop();
                                     SetImage(m);
@@ -152,7 +147,6 @@ namespace Emgu.TF.XamarinForms
                                 finally
                                 {
                                     _isBusy = false;
-                                    
                                 }
                             }
                         });
@@ -162,13 +156,10 @@ namespace Emgu.TF.XamarinForms
                     }
                     else
                     {
-                        Tensor imageTensor;
-                        
-                        imageTensor =
+                        Tensor imageTensor =
                             Emgu.TF.Models.ImageIO.ReadTensorFromImageFile<float>(images[0], 224, 224, 0.0f, 1.0f/255.0f, false, false);
                         
-
-                        Resnet.RecognitionResult result;
+                        Resnet.RecognitionResult[] result;
                         if (_coldSession)
                         {
                             //First run of the recognition graph, here we will compile the graph and initialize the session
@@ -184,7 +175,7 @@ namespace Emgu.TF.XamarinForms
                         sw.Stop();
 
                         String msg = String.Format("Object is {0} with {1}% probability. Recognized in {2} milliseconds.",
-                            result.Label, result.Probability * 100, sw.ElapsedMilliseconds);
+                            result[0].Label, result[0].Probability * 100, sw.ElapsedMilliseconds);
                         SetMessage(msg);
 
 #if __ANDROID__
@@ -196,7 +187,6 @@ namespace Emgu.TF.XamarinForms
 #endif
                         this.TopButton.IsEnabled = true;
                     }
-
 
                 }
 #if !DEBUG
