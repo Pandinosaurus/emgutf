@@ -9,25 +9,32 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+
+    # GitHub-hosted runners stop jobs after 6 hours
+    timeout-minutes: 360
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Setup .NET Core
-      uses: actions/setup-dotnet@v1
-      with:
-        dotnet-version: 3.1.101
+    - uses: actions/checkout@v4
     - name: Check out submodules
       run: git submodule update --init --recursive
+    - name: Install bazelisk
+      run: |
+        sudo curl -fsSL -o /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
+        sudo chmod +x /usr/local/bin/bazel
+    - name: Install build dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential protobuf-compiler libprotobuf-dev python-is-python3 mono-devel
     - name: Build Emgu TF native binary
-      run: ./platforms/ubuntu/docker/docker_build_tf
+      run: ./bazel_build_tf --jobs=2
+      working-directory: ${{ github.workspace }}/platforms/ubuntu/26.04
     - name: Build Emgu TF package
-      run: ./platforms/ubuntu/docker/docker_build_emgutf
-    - uses: actions/upload-artifact@v2
+      run: ./build_emgutf
+      working-directory: ${{ github.workspace }}/platforms/ubuntu/26.04
+    - uses: actions/upload-artifact@v4
       with:
         name: emgutf-ubuntu-zip-package
         path: ${{ github.workspace }}/b/*.zip
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       with:
         name: emgutf-ubuntu-nuget-package
-        path: ${{ github.workspace }}/platforms/nuget/*.nupkg 
+        path: ${{ github.workspace }}/platforms/nuget/*.nupkg

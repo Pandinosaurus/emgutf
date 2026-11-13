@@ -1,0 +1,42 @@
+#!/usr/bin/env bash 
+
+# Stop at the first failing command (e.g. a failed Bazel build) instead of
+# going on to copy binaries that do not exist.
+set -e
+
+# TensorFlow only ships Python requirement locks for 3.10-3.13, and Bazel picks
+# the newest Python (3.14) when this is not set. Override by exporting it first.
+export HERMETIC_PYTHON_VERSION=${HERMETIC_PYTHON_VERSION:-3.12}
+
+SYSTEM_ARCH=$(uname -m)
+echo System is $SYSTEM_ARCH
+
+if [ $SYSTEM_ARCH == "x86_64" ]
+then
+    OUT_FOLDER="runtimes/ubuntu-x64/native"
+elif [ $SYSTEM_ARCH == "aarch64" ]
+then
+    OUT_FOLDER="runtimes/ubuntu-arm64/native"
+fi
+
+echo Output folder is $OUT_FOLDER
+
+cd "$(dirname "$0")"
+cd ../../..
+BAZEL_TMP_FOLDER=$PWD/bazel_tmp
+cd tensorflow
+
+bazel --output_user_root=$BAZEL_TMP_FOLDER build --verbose_failures ${@:1} //tensorflow/tfextern:libtfextern.so 
+cd ..
+
+mkdir -p lib/$OUT_FOLDER
+cp -f tensorflow/bazel-bin/tensorflow/tfextern/*.so lib/$OUT_FOLDER
+# The monolithic libtfextern.so no longer depends on libtensorflow_framework.so, so only copy it if it was built.
+if [ -f tensorflow/bazel-bin/tensorflow/libtensorflow_framework.so ]; then
+    cp -f tensorflow/bazel-bin/tensorflow/libtensorflow_framework.so lib/$OUT_FOLDER/libtensorflow_framework.so.2
+fi
+
+echo Files copied to lib/$OUT_FOLDER
+
+#cd lib/x64
+#ln -s libtensorflow_framework.so libtensorflow_framework.so.2

@@ -1,0 +1,40 @@
+name: Windows TF Builder
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: windows-latest
+    # GitHub-hosted runners stop jobs after 6 hours
+    timeout-minutes: 360
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Check out submodules
+      run: git submodule update --init --recursive
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install bazelisk
+      # bazel_build_tf.ps1 prefers C:\msys64\usr\bin\bazel.exe. Bazelisk picks the Bazel version from tensorflow/.bazelversion
+      run: Invoke-WebRequest -Uri https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-windows-amd64.exe -OutFile C:\msys64\usr\bin\bazel.exe
+      shell: pwsh
+    - name: Build Emgu TF native binary
+      # -Fast: low optimization, so the build fits in the 6 hour limit of hosted runners.
+      # -NoXla: no XLA/MLIR/LLVM; without it the unoptimized dll is too large (> 1.85 GiB) to be loaded by Windows.
+      # -Retries: clang-cl can run out of memory on the 16 GB runner; a retry resumes from the Bazel cache.
+      # -OutputRoot: the Bazel output is larger than the free space on the workspace drive (D:)
+      run: ./bazel_build_tf_x86_64.ps1 -Fast -NoXla -Retries 2 -OutputRoot C:\bazel
+      shell: pwsh
+      working-directory: ${{ github.workspace }}\platforms\windows
+    - name: Build Emgu TF
+      run: ./build_emgutf.ps1
+      shell: pwsh
+      working-directory: ${{ github.workspace }}\platforms\windows
+    - name: Run unit tests
+      run: dotnet test Emgu.TF.Test/Emgu.TF.Test.Net/Emgu.TF.Test.Net.csproj -c Release

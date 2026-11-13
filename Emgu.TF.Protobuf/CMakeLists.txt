@@ -1,8 +1,6 @@
 # --------------------------------------------------------
-#  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.
+#  Copyright (C) 2004-2026 by EMGU Corporation. All rights reserved.
 # --------------------------------------------------------
-
-
 
 #MESSAGE("In protobug project now. HAVE_WINDESKTOP_X64: ${HAVE_WINDESKTOP_X64}")
 
@@ -16,6 +14,8 @@ INSTALL(
   PATTERN "*.projitems"
   PATTERN "*.shproj"
   PATTERN "*.csproj"
+  PATTERN "README.md"
+  PATTERN "Directory.Build.props"
   PATTERN ".svn" EXCLUDE
   PATTERN "obj" EXCLUDE
   PATTERN "CMakeFiles" EXCLUDE
@@ -25,36 +25,49 @@ INSTALL(
   )
 
 #MESSAGE("Adding protobuf project")
-IF (DOTNET_FOUND AND (TARGET Emgu.TF.Netstandard))
-  PROJECT(Emgu.TF.Protobuf.Netstandard)
-  BUILD_DOTNET_PROJ(${PROJECT_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_NAME}/${PROJECT_NAME}.csproj" "" ALL)
+IF (DOTNET_FOUND AND (TARGET Emgu.TF))
+  PROJECT(Emgu.TF.Protobuf)
+  BUILD_DOTNET_PROJ(${PROJECT_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/NetStandard/Emgu.TF.Protobuf.csproj" "" ALL)
   
   SET(PROTOBUF_TOOLS_NUGET_URL https://www.nuget.org/api/v2/package/Google.Protobuf.Tools/${PROTOBUF_VERSION})
   IF(WIN32)
-    SET(PROTOBUF_TOOLS_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../protobuf_archive)
     FIND_PROGRAM (PROTOC_EXE 
-      NAMES protoc
+      NAMES protoc protoc.exe
       PATHS
-      ${PROTOBUF_TOOLS_PATH}
+      ${CMAKE_CURRENT_SOURCE_DIR}/protobuf.tools/tools/windows_x64
       )
-    SET(PROTOBUF_INCLUDE_PATH ${PROTOBUF_TOOLS_PATH}/src)
     
     if (("${PROTOC_EXE}" STREQUAL "PROTOC_EXE-NOTFOUND") OR NOT (EXISTS ${PROTOBUF_INCLUDE_PATH}))
       SET(PROTOBUF_TOOLS_PATH ${CMAKE_CURRENT_SOURCE_DIR}/protobuf.tools)
       SET(PROTOC_EXE "${PROTOBUF_TOOLS_PATH}/tools/windows_x64/protoc.exe")
       SET(PROTOBUF_INCLUDE_PATH ${PROTOBUF_TOOLS_PATH}/tools)
-      ADD_CUSTOM_COMMAND(TARGET ${PROJECT_NAME} 
-	    PRE_BUILD
-	    COMMAND wget ${PROTOBUF_TOOLS_NUGET_URL} -O protobuf.tools.zip
-	    COMMAND unzip -u protobuf.tools.zip -d protobuf.tools
-        COMMENT "Downloading and extractiong protobuf from ${PROTOBUF_TOOLS_NUGET_URL} to 'protobuf.tools' folder under ${CMAKE_CURRENT_SOURCE_DIR};"
-	    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+      # Download protobuf tools. CMake does the download and extraction itself,
+      # because wget and unzip are not available on every Windows machine (for example GitHub hosted runners).
+      IF(NOT EXISTS "${PROTOC_EXE}")
+        MESSAGE(STATUS "Downloading protobuf tools from ${PROTOBUF_TOOLS_NUGET_URL}")
+        FILE(DOWNLOAD "${PROTOBUF_TOOLS_NUGET_URL}" "${CMAKE_CURRENT_SOURCE_DIR}/protobuf.tools.zip"
+          STATUS PROTOBUF_TOOLS_DOWNLOAD_STATUS)
+        LIST(GET PROTOBUF_TOOLS_DOWNLOAD_STATUS 0 PROTOBUF_TOOLS_DOWNLOAD_CODE)
+        IF(NOT PROTOBUF_TOOLS_DOWNLOAD_CODE EQUAL 0)
+          MESSAGE(FATAL_ERROR "Failed to download ${PROTOBUF_TOOLS_NUGET_URL}: ${PROTOBUF_TOOLS_DOWNLOAD_STATUS}")
+        ENDIF()
+        FILE(MAKE_DIRECTORY "${PROTOBUF_TOOLS_PATH}")
+        EXECUTE_PROCESS(
+          COMMAND "${CMAKE_COMMAND}" -E tar xf "${CMAKE_CURRENT_SOURCE_DIR}/protobuf.tools.zip"
+          WORKING_DIRECTORY "${PROTOBUF_TOOLS_PATH}"
+          RESULT_VARIABLE PROTOBUF_TOOLS_EXTRACT_RESULT)
+        IF(NOT PROTOBUF_TOOLS_EXTRACT_RESULT EQUAL 0)
+          MESSAGE(FATAL_ERROR "Failed to extract protobuf.tools.zip: ${PROTOBUF_TOOLS_EXTRACT_RESULT}")
+        ENDIF()
+      ENDIF()
       ADD_CUSTOM_COMMAND(TARGET ${PROJECT_NAME} 
 	    PRE_BUILD
 	    COMMAND icacls protoc.exe /grant %USERNAME%:RX
         COMMENT "Adding execute permission to protoc.exe;"
 	    WORKING_DIRECTORY "${PROTOBUF_TOOLS_PATH}/tools/windows_x64/")
     ELSE()
+      MESSAGE(STATUS "PROTOC_EXE: ${PROTOC_EXE} FOUND")
+      SET(PROTOBUF_INCLUDE_PATH ${PROTOBUF_TOOLS_PATH}/google/protobuf)
       get_filename_component(PROTOC_EXEC_EXT "${PROTOC_EXE}" EXT)
       IF("${PROTOC_EXEC_EXT}" STREQUAL "")	
 	    #FILE(COPY "${PROTOC_EXE}" "${PROTOC_EXE}.exe")
@@ -65,15 +78,27 @@ IF (DOTNET_FOUND AND (TARGET Emgu.TF.Netstandard))
       MESSAGE(STATUS "FOUND PROTOC_EXE: ${PROTOC_EXE}")
     endif()
   ELSEIF(APPLE)
-    ADD_CUSTOM_COMMAND(TARGET ${PROJECT_NAME} 
-      PRE_BUILD
-      COMMAND wget ${PROTOBUF_TOOLS_NUGET_URL} -O protobuf.tools.zip
-      COMMAND unzip -u protobuf.tools.zip -d protobuf.tools
-      COMMENT "Downloading and extractiong protobuf from ${PROTOBUF_TOOLS_NUGET_URL} to 'protobuf.tools' folder under ${CMAKE_CURRENT_SOURCE_DIR};"
-      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
     SET(PROTOBUF_TOOLS_PATH ${CMAKE_CURRENT_SOURCE_DIR}/protobuf.tools)
     SET(PROTOC_EXE "${PROTOBUF_TOOLS_PATH}/tools/macosx_x64/protoc")
     SET(PROTOBUF_INCLUDE_PATH ${PROTOBUF_TOOLS_PATH}/tools)
+    # Download protobuf tools. CMake does the download and extraction itself, so wget and unzip are not required.
+    IF(NOT EXISTS "${PROTOC_EXE}")
+      MESSAGE(STATUS "Downloading protobuf tools from ${PROTOBUF_TOOLS_NUGET_URL}")
+      FILE(DOWNLOAD "${PROTOBUF_TOOLS_NUGET_URL}" "${CMAKE_CURRENT_SOURCE_DIR}/protobuf.tools.zip"
+        STATUS PROTOBUF_TOOLS_DOWNLOAD_STATUS)
+      LIST(GET PROTOBUF_TOOLS_DOWNLOAD_STATUS 0 PROTOBUF_TOOLS_DOWNLOAD_CODE)
+      IF(NOT PROTOBUF_TOOLS_DOWNLOAD_CODE EQUAL 0)
+        MESSAGE(FATAL_ERROR "Failed to download ${PROTOBUF_TOOLS_NUGET_URL}: ${PROTOBUF_TOOLS_DOWNLOAD_STATUS}")
+      ENDIF()
+      FILE(MAKE_DIRECTORY "${PROTOBUF_TOOLS_PATH}")
+      EXECUTE_PROCESS(
+        COMMAND "${CMAKE_COMMAND}" -E tar xf "${CMAKE_CURRENT_SOURCE_DIR}/protobuf.tools.zip"
+        WORKING_DIRECTORY "${PROTOBUF_TOOLS_PATH}"
+        RESULT_VARIABLE PROTOBUF_TOOLS_EXTRACT_RESULT)
+      IF(NOT PROTOBUF_TOOLS_EXTRACT_RESULT EQUAL 0)
+        MESSAGE(FATAL_ERROR "Failed to extract protobuf.tools.zip: ${PROTOBUF_TOOLS_EXTRACT_RESULT}")
+      ENDIF()
+    ENDIF()
     ADD_CUSTOM_COMMAND(TARGET ${PROJECT_NAME} 
       PRE_BUILD
       COMMAND chmod u+rx ${PROTOC_EXE}
@@ -89,57 +114,51 @@ IF (DOTNET_FOUND AND (TARGET Emgu.TF.Netstandard))
   ENDIF()
   
   SET(PROTO_SOURCE)
-  FILE(GLOB PROTO_SOURCE_FILES_FRAME_WORK RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/tensorflow/core/framework/" "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/tensorflow/core/framework/*.proto")
-  FOREACH(PROTO_SOURCE_FILE ${PROTO_SOURCE_FILES_FRAME_WORK} )
-    #MESSAGE(STATUS "File: ${PROTO_SOURCE_FILE}")
-    IF(WIN32)
-      LIST(APPEND PROTO_SOURCE "tensorflow\\core\\framework\\${PROTO_SOURCE_FILE}" )
-    ELSE()
-      LIST(APPEND PROTO_SOURCE "tensorflow/core/framework/${PROTO_SOURCE_FILE}" )
-    ENDIF()
+
+  # Add .proto files from tensorflow/core/framework
+  FILE(GLOB PROTO_SOURCE_FILES_FRAMEWORK RELATIVE 
+    "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/tensorflow/core/framework/" 
+    "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/tensorflow/core/framework/*.proto")
+  FOREACH(PROTO_SOURCE_FILE ${PROTO_SOURCE_FILES_FRAMEWORK} )
+    LIST(APPEND PROTO_SOURCE "tensorflow/core/framework/${PROTO_SOURCE_FILE}" )
   ENDFOREACH()
   
-  FILE(GLOB PROTO_SOURCE_FILES_PROTOBUF RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/tensorflow/core/protobuf/" "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/tensorflow/core/protobuf/*.proto")
-  #LIST(REMOVE_ITEM PROTO_SOURCE_FILES_PROTOBUF "meta_graph.proto" "saved_model.proto" "worker.proto" "worker_service.proto")
-  #LIST(REMOVE_ITEM PROTO_SOURCE_FILES_PROTOBUF "saved_model.proto" "worker.proto" "worker_service.proto")
-  LIST(REMOVE_ITEM PROTO_SOURCE_FILES_PROTOBUF "worker.proto" "worker_service.proto")
+  SET(PROTOBUF_TSL_INCLUDE_PATH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/third_party/xla/xla")
+  SET(PROTOBUF_TSL_INCLUDE_PATH "${PROTOBUF_TSL_INCLUDE_PATH_ROOT}/tsl/protobuf")
+  SET(PROTO_SOURCE_XLA_INCLUDE_PATH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/third_party/xla")
+  
+  # Add .proto files from tensorflow/core/protobuf
+  FILE(GLOB PROTO_SOURCE_FILES_PROTOBUF RELATIVE 
+    "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/tensorflow/core/protobuf/" 
+    "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/tensorflow/core/protobuf/*.proto")
+  LIST(REMOVE_ITEM PROTO_SOURCE_FILES_PROTOBUF 
+    "conv_autotuning.proto"
+    "autotuning.proto"
+  )
   FOREACH(PROTO_SOURCE_FILE ${PROTO_SOURCE_FILES_PROTOBUF} )
-    #MESSAGE(STATUS "Protobuf File: ${PROTO_SOURCE_FILE}")
-    IF(WIN32)
-      LIST(APPEND PROTO_SOURCE "tensorflow\\core\\protobuf\\${PROTO_SOURCE_FILE}" )
-    ELSE()
       LIST(APPEND PROTO_SOURCE "tensorflow/core/protobuf/${PROTO_SOURCE_FILE}" )
-    ENDIF()
   ENDFOREACH()
-  
-  #FILE(GLOB PROTO_SOURCE_FILES_LIB_CORE RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/tensorflow/core/lib/core" "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/tensorflow/core/lib/core/*.proto")
-  #FOREACH(PROTO_SOURCE_FILE ${PROTO_SOURCE_FILES_LIB_CORE} )
-  #  IF(WIN32)
-  #    LIST(APPEND PROTO_SOURCE "tensorflow\\core\\lib\\core\\${PROTO_SOURCE_FILE}" )
-  #  ELSE()
-  #    LIST(APPEND PROTO_SOURCE "tensorflow/core/lib/core/${PROTO_SOURCE_FILE}" )
-  #  ENDIF()
-  #ENDFOREACH()
-  
-  IF(WIN32)
-    LIST(APPEND PROTO_SOURCE "tensorflow\\stream_executor\\dnn.proto" )
-  ELSE()
-    LIST(APPEND PROTO_SOURCE "tensorflow/stream_executor/dnn.proto" )
-  ENDIF()
-  
-  SET(PROTO_GEN_COMMAND "${PROTOC_EXE}" "--proto_path=." "--proto_path=\"${PROTOBUF_INCLUDE_PATH}\""  "--csharp_out=\"${CMAKE_CURRENT_SOURCE_DIR}\"" "--csharp_opt=file_extension=.g.cs" ${PROTO_SOURCE})
-  
-  #IF(NOT WIN32)
-  #  SET(PROTO_GEN_COMMAND mono ${PROTO_GEN_COMMAND})
-  #ENDIF()
-  
-  #MESSAGE(STATUS "PROTO_GEN_COMMAND: ${PROTO_GEN_COMMAND}")
-  
-  #ADD_CUSTOM_COMMAND(TARGET ${PROJECT_NAME} 
-  #	PRE_BUILD
-  #	COMMAND rm -f *.g.cs #remove all existing generated cs files
-  #	WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-  #	)
+
+  # Compute native paths for the proto files
+  SET (PROTO_SOURCE_NATIVE_PATH)
+  FOREACH(PROTO_SOURCE_FILE ${PROTO_SOURCE})
+    file(TO_NATIVE_PATH ${PROTO_SOURCE_FILE} PROTO_SOURCE_FILE)
+    MESSAGE(STATUS "Adding proto source: ${PROTO_SOURCE_FILE}")
+    LIST(APPEND PROTO_SOURCE_NATIVE_PATH ${PROTO_SOURCE_FILE})
+  ENDFOREACH()
+
+  # Set the protobuf generation command
+  SET(PROTO_GEN_COMMAND 
+	"${PROTOC_EXE}" 
+	"--experimental_allow_proto3_optional" 
+	"--proto_path=." 
+	"--proto_path=\"${PROTOBUF_INCLUDE_PATH}\"" 
+	"--proto_path=\"${PROTOBUF_TSL_INCLUDE_PATH_ROOT}\"" 
+	"--proto_path=\"${PROTO_SOURCE_XLA_INCLUDE_PATH_ROOT}\"" 
+	"--csharp_out=\"${CMAKE_CURRENT_SOURCE_DIR}\"" 
+	"--csharp_opt=file_extension=.g.cs"
+    "--csharp_opt=base_namespace="	
+	${PROTO_SOURCE_NATIVE_PATH})
   
   ADD_CUSTOM_COMMAND(TARGET ${PROJECT_NAME} 
     PRE_BUILD
@@ -147,16 +166,49 @@ IF (DOTNET_FOUND AND (TARGET Emgu.TF.Netstandard))
     COMMENT "PROTO_GEN_COMMAND: ${PROTO_GEN_COMMAND}"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/"
     )
+
+  # Add .proto files from tsl
+  SET(PROTO_SOURCE_TSL)
+  FILE(GLOB PROTO_SOURCE_FILES_TSL RELATIVE 
+    "${PROTO_SOURCE_XLA_INCLUDE_PATH_ROOT}" 
+    "${PROTO_SOURCE_XLA_INCLUDE_PATH_ROOT}/xla/tsl/protobuf/*.proto")
+  FOREACH(PROTO_SOURCE_FILE_TSL ${PROTO_SOURCE_FILES_TSL} )
+    LIST(APPEND PROTO_SOURCE_TSL "${PROTO_SOURCE_FILE_TSL}" )
+  ENDFOREACH()
   
+  # Compute native paths for the proto files
+  SET (PROTO_SOURCE_NATIVE_PATH_TSL )
+  FOREACH(PROTO_SOURCE_FILE_TSL ${PROTO_SOURCE_TSL})
+    file(TO_NATIVE_PATH ${PROTO_SOURCE_FILE_TSL} PROTO_SOURCE_FILE_TSL)
+    MESSAGE(STATUS "Adding proto source: ${PROTO_SOURCE_FILE_TSL}")
+    LIST(APPEND PROTO_SOURCE_NATIVE_PATH_TSL ${PROTO_SOURCE_FILE_TSL})
+  ENDFOREACH()
+
+  # Set the protobuf generation command for tsl
+  SET(PROTO_GEN_COMMAND_TSL 
+    "${PROTOC_EXE}" 
+    "--proto_path=." 
+    "--proto_path=\"${PROTOBUF_INCLUDE_PATH}\"" 
+    "--proto_path=\"${PROTOBUF_TSL_INCLUDE_PATH_ROOT}\""  
+    "--proto_path=\"${PROTO_SOURCE_XLA_INCLUDE_PATH_ROOT}\"" 
+    "--csharp_out=\"${CMAKE_CURRENT_SOURCE_DIR}\"" 
+    "--csharp_opt=file_extension=.tsl.g.cs" 
+    "--csharp_opt=base_namespace="	
+    ${PROTO_SOURCE_NATIVE_PATH_TSL})
+  
+  ADD_CUSTOM_COMMAND(TARGET ${PROJECT_NAME} 
+    PRE_BUILD
+    COMMAND ${PROTO_GEN_COMMAND_TSL}
+    COMMENT "PROTO_GEN_COMMAND_TSL: ${PROTO_GEN_COMMAND_TSL}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../tensorflow/third_party/xla"
+    )
+
   INSTALL(
-    FILES 
-    ${LIBRARY_OUTPUT_PATH}/${PROJECT_NAME}.xml
-    ${LIBRARY_OUTPUT_PATH}/${PROJECT_NAME}.dll 
+    DIRECTORY
+    ${LIBRARY_OUTPUT_PATH}/Build/Emgu.TF.Protobuf
     DESTINATION ${CPACK_PACKAGE_CLI_FOLDER}
     COMPONENT emgutf_binary)
   
-  #IF(HAVE_WINDESKTOP OR HAVE_OSX)
-  ADD_DEPENDENCIES(${PROJECT_NAME} Emgu.TF.Netstandard)
-  #ENDIF()
+  ADD_DEPENDENCIES(${PROJECT_NAME} Emgu.TF)
   
 ENDIF()

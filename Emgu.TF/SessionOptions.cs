@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2026 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -70,19 +70,19 @@ namespace Emgu.TF
     public static partial class TfInvoke
     {
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern IntPtr tfeNewSessionOptions();
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeDeleteSessionOptions(ref IntPtr options);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeSetTarget(
             IntPtr options,
             [MarshalAs(StringMarshalType)]
             String target);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeSetConfig(IntPtr options, IntPtr proto, int protoLen, IntPtr status);
     }
 }

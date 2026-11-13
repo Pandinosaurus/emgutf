@@ -1,0 +1,200 @@
+# Builds the Emgu TF native library (tfextern.dll) for Windows x64 with Bazel.
+#
+#   -Avx2         add /arch:AVX2 to the compiler flags
+#   -Docker       build inside a docker container (uses c:\bazel_output_* and remote/docker sandbox flags)
+#   -Fast         low optimization, reduced debug info build. Much faster to compile, but the binary
+#                 is slower and bigger. Use for CI and development checks, not for binaries you ship.
+#                 Note: Windows cannot load a dll whose image is larger than about 1.85 GiB; the script checks this.
+#   -FastOptLevel optimization level used by -Fast: Od (default, no optimization) or O1.
+#                 Measured on cwise_op_select.cc: /O2 107 min, /O1 65 min, /Od 4 min. With Od, the TensorFlow
+#                 kernels (except the very slow cwise_op_*.cc) are still compiled with /O1, because a dll built
+#                 entirely without optimization is too large to be loaded by Windows.
+#   -DiskCache    directory for Bazel's --disk_cache
+#   -OutputRoot   put the Bazel output_base and output_user_root under this folder instead of next to the script
+#                 (the output of a full build is 25-40 GB; useful when the repository drive is small)
+#   -NoXla        build without XLA/MLIR/LLVM (--define=with_xla_support=false). Only about a fifth of the
+#                 actions and a much smaller dll, but the XLA/JIT features of TensorFlow are missing.
+#   -Jobs         maximum number of parallel Bazel jobs. -Fast limits it by default to the memory of the machine
+#                 (about 5 GB per job), because clang-cl can run out of memory on small machines
+#   -Retries      run Bazel again (up to this many times) when it fails; Bazel resumes from its cache
+#   -DryRun       print the Bazel command and environment without running it
+#
+# Requirements: Bazel (bazelisk) on PATH or at C:\msys64\usr\bin\bazel.exe, Python 3.12,
+#               Visual Studio 2019+ with the C++ workload.
+[CmdletBinding()]
+param(
+    [switch]$Avx2,
+    [switch]$Docker,
+    [switch]$Fast,
+    [switch]$NoXla,
+    [ValidateSet('O1', 'Od')]
+    [string]$FastOptLevel = 'Od',
+    [string]$DiskCache,
+    [string]$OutputRoot,
+    [int]$Jobs,
+    [int]$Retries = 0,
+    [switch]$DryRun
+)
+
+$ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\common.ps1"
+
+$root = Get-EmguTfRoot
+$nativeRuntimeDir = Join-Path $root 'lib\runtimes\win-x64\native'
+
+# ---- Visual Studio / LLVM / Python -----------------------------------------------------------------------------
+$vsDir = Find-VisualStudio -Root $root
+if ($vsDir) {
+    $env:BAZEL_VS = $vsDir
+    $env:BAZEL_VC = Join-Path $vsDir 'VC'
+}
+Write-Host "Using BAZEL_VC=$($env:BAZEL_VC)"
+
+# Prefer the standalone LLVM if installed. The clang bundled with VS2026 reports a git hash instead of a version
+# number, which breaks Bazel's builtin include directory detection.
+# The literal quotes are kept on purpose: they keep the generated toolchain identical to the one built by
+# bazel_build_tf.bat, so an existing Bazel cache stays valid.
+$standaloneLlvm = 'C:\Program Files\LLVM'
+if (Test-Path (Join-Path $standaloneLlvm 'bin')) { $env:BAZEL_LLVM = '"' + $standaloneLlvm + '"' }
+if ($env:BAZEL_VC -and -not (Test-Path (Join-Path $standaloneLlvm 'bin\clang-cl.exe'))) {
+    $env:BAZEL_LLVM = Join-Path $env:BAZEL_VC 'Tools\Llvm\x64'
+}
+Write-Host "Using BAZEL_LLVM=$($env:BAZEL_LLVM)"
+
+$pythonBase = Find-PythonBase
+if (-not $pythonBase) { throw 'python.exe was not found. Install Python 3.12 and make sure it is on PATH.' }
+$env:PYTHON_BIN_PATH = Join-Path $pythonBase 'python.exe'
+$env:PYTHON_LIB_PATH = Join-Path $pythonBase 'lib\site-packages'
+Write-Host "PYTHON_BASE_PATH=$pythonBase"
+Write-Host "PYTHON_BIN_PATH=$($env:PYTHON_BIN_PATH)"
+
+# ---- Bazel output folders ------------------------------------------------------------------------------------------
+$dockerFlags = @()
+if ($Docker) {
+    $dockerFlags = @('--define=EXECUTOR=remote', '--experimental_docker_verbose',
+        '--experimental_enable_docker_sandbox', '--jobs=2')
+    $outputUserRoot = 'c:\bazel_output_user_root'
+    $outputBase = 'c:\bazel_output_base'
+} else {
+    $outputParent = $PSScriptRoot
+    if ($OutputRoot) { $outputParent = $OutputRoot }
+    $outputUserRoot = Join-Path $outputParent 'output_user_root'
+    $outputBase = Join-Path $outputParent 'output_base'
+}
+
+# ---- Bazel command line ------------------------------------------------------------------------------------------
+$bazel = 'bazel.exe'
+if (Test-Path 'C:\msys64\usr\bin\bazel.exe') { $bazel = 'C:\msys64\usr\bin\bazel.exe' }
+
+$repoPath = "$pythonBase;$($env:PATH)"
+
+$bazelArgs = @(
+    "--output_base=$outputBase",
+    "--output_user_root=$outputUserRoot",
+    'build',
+    "--repo_env=PATH=$repoPath",
+    '//tensorflow/tfextern:libtfextern.so',
+    '--verbose_failures'
+) + $dockerFlags + @('--config=win_clang')
+
+if ($Avx2) { $bazelArgs += '--copt=/arch:AVX2' }
+
+if ($Fast) {
+    Write-Warning '-Fast: building with reduced optimization. Do not ship the resulting tfextern.dll.'
+    $bazelArgs += @(
+        "--copt=/$FastOptLevel",                  # overrides the /O2 of the opt compilation mode
+        '--copt=/clang:-w',                       # win_clang enables -Weverything; skip the diagnostics work
+        '--linkopt=/DEBUG:NONE',
+        '--local_ram_resources=HOST_RAM*.75',     # parallel clang-cl jobs of heavy kernels can run out of memory
+        '--show_progress_rate_limit=30'
+    )
+    if ($FastOptLevel -eq 'Od') {
+        # +regex,-regex@option: kernels in tensorflow/core/kernels except cwise_op*; later options override /Od
+        $bazelArgs += '--per_file_copt=tensorflow/core/kernels/.*,-tensorflow/core/kernels/cwise_op.*@/O1'
+    }
+}
+
+if ($NoXla) { $bazelArgs += '--define=with_xla_support=false' }
+
+# Separate output trees, so that the cache of the normal build is not overwritten by these variants
+$suffix = @()
+if ($Fast) { $suffix += 'fast' }
+if ($NoXla) { $suffix += 'noxla' }
+if ($suffix.Count -gt 0) { $bazelArgs += "--platform_suffix=$($suffix -join '-')" }
+
+if ($Fast -and -not $Jobs) {
+    # Unoptimized compiles of the big kernels use 3-5 GB each
+    $ramGb = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB
+    $limit = [int][math]::Floor($ramGb / 5)
+    if ($limit -lt 1) { $limit = 1 }
+    if ($limit -lt [Environment]::ProcessorCount) { $Jobs = $limit }
+}
+if ($Jobs) { $bazelArgs += "--jobs=$Jobs" }
+
+if ($DiskCache) { $bazelArgs += "--disk_cache=$DiskCache" }
+
+if ($DryRun) {
+    Write-Host ''
+    Write-Host "Working directory: $(Join-Path $root 'tensorflow')"
+    Write-Host "$bazel"
+    $bazelArgs | ForEach-Object { Write-Host "  $_" }
+    Write-Host ''
+    foreach ($name in 'BAZEL_VS', 'BAZEL_VC', 'BAZEL_LLVM', 'PYTHON_BIN_PATH', 'PYTHON_LIB_PATH', 'HERMETIC_PYTHON_VERSION') {
+        Write-Host ("  {0}={1}" -f $name, (Get-Item "env:$name" -ErrorAction SilentlyContinue).Value)
+    }
+    return
+}
+
+New-Item -ItemType Directory -Force -Path $outputUserRoot, $outputBase | Out-Null
+
+# ---- Build -------------------------------------------------------------------------------------------------------
+Push-Location (Join-Path $root 'tensorflow')
+try {
+    $attempt = 0
+    while ($true) {
+        & $bazel @bazelArgs
+        if ($LASTEXITCODE -eq 0) { break }
+        $attempt++
+        if ($attempt -gt $Retries) { throw "Bazel failed with exit code $LASTEXITCODE" }
+        Write-Warning "Bazel failed with exit code $LASTEXITCODE, running it again (retry $attempt of $Retries)"
+    }
+} finally {
+    Pop-Location
+}
+
+# ---- Deploy ---------------------------------------------------------------------------------------------------------
+$built = Join-Path $root 'tensorflow\bazel-bin\tensorflow\tfextern\libtfextern.so'
+if (-not (Test-Path $built)) { throw "Bazel reported success but $built does not exist" }
+
+# Windows cannot load a dll whose image is too large: LoadLibrary fails with 0x8007000B / error 193 (bad image format).
+# Measured with padded test dlls: an image of 1.84 GiB loads, 1.88 GiB does not.
+$maxImageSize = 1.85GB
+$stream = [IO.File]::OpenRead($built)
+try {
+    $reader = New-Object IO.BinaryReader($stream)
+    $stream.Position = 0x3C
+    $peOffset = $reader.ReadInt32()
+    $stream.Position = $peOffset + 24 + 56      # PE signature + COFF header + offset of SizeOfImage in the optional header
+    $imageSize = [uint64]$reader.ReadUInt32()
+} finally {
+    $stream.Close()
+}
+Write-Host ("tfextern image size: {0:N2} GiB" -f ($imageSize / 1GB))
+if ($imageSize -ge $maxImageSize) {
+    throw ("The built dll is {0:N2} GiB, which is above the limit (about 1.85 GiB) of a loadable Windows dll. " -f ($imageSize / 1GB)) +
+        "Use more optimization (for example -FastOptLevel O1) or build without -Fast."
+}
+
+New-Item -ItemType Directory -Force -Path $nativeRuntimeDir | Out-Null
+# Copy to a temporary file first, so a failed copy (for example a full disk) does not destroy the previous dll.
+$target = Join-Path $nativeRuntimeDir 'tfextern.dll'
+$temp = "$target.tmp"
+try {
+    Copy-Item $built $temp -Force
+    Move-Item $temp $target -Force
+} finally {
+    if (Test-Path $temp) { Remove-Item $temp -Force }
+}
+Write-Host "Copied tfextern.dll to $nativeRuntimeDir"
+
+Copy-MsvcRedist -VcDir $env:BAZEL_VC -Destination $nativeRuntimeDir

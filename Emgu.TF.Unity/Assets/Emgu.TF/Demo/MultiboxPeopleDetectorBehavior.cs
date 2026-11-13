@@ -1,5 +1,5 @@
 //----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2026 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 
@@ -13,166 +13,180 @@ using System.Text;
 using System.Runtime.InteropServices;
 using Emgu.TF;
 using Emgu.TF.Models;
-//using UnityEditor.VersionControl;
 using UnityEngine.UI;
 
-public class MultiboxPeopleDetectorBehavior : MonoBehaviour
+namespace Emgu.TF
 {
-    private WebCamTexture webcamTexture;
-    private Texture2D resultTexture;
-    private Texture2D drawableTexture;
-    private Color32[] data;
-    private byte[] bytes;
-    private WebCamDevice[] devices;
-    public int cameraCount = 0;
-    private bool _textureResized = false;
-    private Quaternion baseRotation;
-    private bool _liveCameraView = false;
-    private bool _staticViewRendered = false;
-    private MultiboxGraph _multiboxGraph;
-
-    public Text DisplayText;
-
-
-    // Use this for initialization
-    void Start()
+    public class MultiboxPeopleDetectorBehavior : MonoBehaviour
     {
-        bool loaded = TfInvoke.CheckLibraryLoaded();
-        //DisplayText.text = String.Format("Tensorflow library loaded: {0}", loaded);
+        private WebCamTexture _webcamTexture;
+        private Texture2D _drawableTexture;
+        private Color32[] _data;
+        private byte[] _bytes;
+        private WebCamDevice[] _devices;
+        public int _cameraCount = 0;
+        private bool _textureResized = false;
+        private Quaternion _baseRotation;
+        private bool _liveCameraView = false;
+        private bool _staticViewRendered = false;
+        private MultiboxGraph _multiboxGraph;
 
-        _liveCameraView = false;
+        public Text DisplayText;
 
-        /*
-        WebCamDevice[] devices = WebCamTexture.devices;
-        int cameraCount = devices.Length;
 
-        if (cameraCount == 0)
+        // Use this for initialization
+        void Start()
         {
+            bool loaded = TfInvoke.Init();
+            //DisplayText.text = String.Format("Tensorflow library loaded: {0}", loaded);
+
+            //Use the following flag to change detection based on image / camera
             _liveCameraView = false;
 
-        }
-        else
-        {
-            _liveCameraView = true;
-            webcamTexture = new WebCamTexture(devices[0].name);
-            baseRotation = transform.rotation;
-            webcamTexture.Play(); 
-        }*/
-
-    }
-
-    private String _displayMessage = String.Empty;
-
-    // Update is called once per frame
-    void Update()
-    {
-        if (_multiboxGraph == null)
-        {
-            _multiboxGraph = new MultiboxGraph();
-            StartCoroutine(_multiboxGraph.Init());
-        }
-        else if (!_multiboxGraph.Imported)
-        {
-            _displayMessage = String.Format("Downloading multibox model files, {0} % of file {1}...", _multiboxGraph.DownloadProgress * 100, _multiboxGraph.DownloadFileName);
-        } else if (_liveCameraView)
-        {
-            _displayMessage = String.Empty;
-
-            if (webcamTexture != null && webcamTexture.didUpdateThisFrame)
+            if (_liveCameraView)
             {
-                #region convert the webcam texture to RGBA bytes
+                _devices = WebCamTexture.devices;
+                _cameraCount = _devices.Length;
 
-                if (data == null || (data.Length != webcamTexture.width * webcamTexture.height))
+                if (_cameraCount == 0)
                 {
-                    data = new Color32[webcamTexture.width * webcamTexture.height];
-                }
-                webcamTexture.GetPixels32(data);
+                    _liveCameraView = false;
 
-                if (bytes == null || bytes.Length != data.Length * 4)
+                }
+                else
                 {
-                    bytes = new byte[data.Length * 4];
+                    _liveCameraView = true;
+                    _webcamTexture = new WebCamTexture(_devices[0].name);
+                    _baseRotation = this.transform.rotation;
+                    _webcamTexture.Play();
                 }
-                GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-                Marshal.Copy(handle.AddrOfPinnedObject(), bytes, 0, bytes.Length);
-                handle.Free();
-
-                #endregion
-
-                #region convert the RGBA bytes to texture2D
-
-                if (resultTexture == null || resultTexture.width != webcamTexture.width ||
-                    resultTexture.height != webcamTexture.height)
-                {
-                    resultTexture = new Texture2D(webcamTexture.width, webcamTexture.height, TextureFormat.RGBA32,
-                        false);
-                }
-
-                resultTexture.LoadRawTextureData(bytes);
-                resultTexture.Apply();
-
-                #endregion
-
-                transform.rotation = baseRotation * Quaternion.AngleAxis(webcamTexture.videoRotationAngle, Vector3.up);
-
-                Tensor imageTensor = ImageIO.ReadTensorFromTexture2D(resultTexture, 224, 224, 128.0f, 1.0f/128.0f, true);
-                MultiboxGraph.Result[] results = _multiboxGraph.Detect(imageTensor);
-
-                if (drawableTexture == null || drawableTexture.width != resultTexture.width ||
-                    drawableTexture.height != resultTexture.height)
-                    drawableTexture = new Texture2D(resultTexture.width, resultTexture.height, TextureFormat.RGBA32, false);
-                //drawableTexture.SetPixels(resultTexture.GetPixels()); //slower implementation
-                drawableTexture.LoadRawTextureData(resultTexture.GetRawTextureData()); //faster implementation
-
-                MultiboxGraph.DrawResults(drawableTexture, results, 0.2f, true);
-
-                if (!_textureResized)
-                {
-                    ResizeTexture(drawableTexture);
-                    _textureResized = true;
-                }
-                RenderTexture(drawableTexture);
-                //count++;
-
             }
         }
-        else if (!_staticViewRendered)
+
+        private String _displayMessage = String.Empty;
+
+        // Update is called once per frame
+        void Update()
         {
-            Texture2D texture = Resources.Load<Texture2D>("surfers");
-            Tensor imageTensor = ImageIO.ReadTensorFromTexture2D(texture, 224, 224, 128.0f, 1.0f/128.0f, true);
+            if (_multiboxGraph == null)
+            {
+                _multiboxGraph = new MultiboxGraph();
+                StartCoroutine(_multiboxGraph.Init());
+            }
+            else if (!_multiboxGraph.Imported)
+            {
+                _displayMessage = String.Format("Downloading multibox model files, {0} % of file {1}...",
+                    _multiboxGraph.DownloadProgress * 100, _multiboxGraph.DownloadFileName);
+            }
+            else if (_liveCameraView)
+            {
+                _displayMessage = String.Empty;
 
-            //byte[] raw = ImageIO.EncodeJpeg(imageTensor, 128.0f, 128.0f);
-            //System.IO.File.WriteAllBytes("surfers_out.jpg", raw);
+                if (_webcamTexture != null && _webcamTexture.didUpdateThisFrame)
+                {
+                    int webcamWidth = _webcamTexture.width;
+                    int webcamHeight = _webcamTexture.height;
 
-            MultiboxGraph.Result[] results = _multiboxGraph.Detect(imageTensor);
+                    #region convert the webcam texture to RGBA bytes
 
-            drawableTexture = new Texture2D(texture.width, texture.height, TextureFormat.ARGB32, false);
-            drawableTexture.SetPixels(texture.GetPixels());
-            MultiboxGraph.DrawResults(drawableTexture, results, 0.1f, true);
+                    if (_data == null || (_data.Length != webcamWidth * webcamHeight))
+                    {
+                        _data = new Color32[webcamWidth * webcamHeight];
+                    }
 
-            RenderTexture(drawableTexture);
-            ResizeTexture(drawableTexture);
+                    _webcamTexture.GetPixels32(_data);
 
-            _displayMessage = String.Empty;
-            _staticViewRendered = true;
+                    if (_bytes == null || _bytes.Length != _data.Length * 4)
+                    {
+                        _bytes = new byte[_data.Length * 4];
+                    }
+
+                    GCHandle handle = GCHandle.Alloc(_data, GCHandleType.Pinned);
+                    Marshal.Copy(handle.AddrOfPinnedObject(), _bytes, 0, _bytes.Length);
+                    handle.Free();
+
+                    #endregion
+
+                    #region convert the RGBA bytes to texture2D
+
+                    if (_drawableTexture == null || _drawableTexture.width != webcamWidth ||
+                        _drawableTexture.height != webcamHeight)
+                    {
+                        _drawableTexture = new Texture2D(webcamWidth, webcamHeight, TextureFormat.RGBA32,
+                            false);
+                    }
+
+                    _drawableTexture.LoadRawTextureData(_bytes);
+                    _drawableTexture.Apply();
+
+                    #endregion
+
+                    //Tensor imageTensor = ImageIO.ReadTensorFromTexture2D(_drawableTexture, 224, 224, 128.0f, 1.0f/128.0f, true);
+                    Tensor imageTensor = ImageIO.ReadTensorFromColor32(
+                        _data,
+                        webcamWidth,
+                        webcamHeight,
+                        224,
+                        224,
+                        128.0f,
+                        1.0f / 128.0f,
+                        true);
+                    MultiboxGraph.Result[] results = _multiboxGraph.Detect(imageTensor);
+
+                    MultiboxGraph.DrawResults(_drawableTexture, results, 0.2f, true);
+
+                    if (!_textureResized)
+                    {
+                        ResizeTexture(_drawableTexture);
+                        _textureResized = true;
+                    }
+
+                    this.transform.rotation =
+                        _baseRotation * Quaternion.AngleAxis(_webcamTexture.videoRotationAngle, Vector3.up);
+                    RenderTexture(_drawableTexture);
+                    //count++;
+
+                }
+            }
+            else if (!_staticViewRendered)
+            {
+                Texture2D texture = Resources.Load<Texture2D>("surfers");
+                Tensor imageTensor = ImageIO.ReadTensorFromTexture2D(texture, 224, 224, 128.0f, 1.0f / 128.0f, true);
+
+                //byte[] raw = ImageIO.EncodeJpeg(imageTensor, 128.0f, 128.0f);
+                //System.IO.File.WriteAllBytes("surfers_out.jpg", raw);
+
+                MultiboxGraph.Result[] results = _multiboxGraph.Detect(imageTensor);
+
+                _drawableTexture = new Texture2D(texture.width, texture.height, TextureFormat.ARGB32, false);
+                _drawableTexture.SetPixels32(texture.GetPixels32());
+                MultiboxGraph.DrawResults(_drawableTexture, results, 0.1f, true);
+
+                RenderTexture(_drawableTexture);
+                ResizeTexture(_drawableTexture);
+
+                _displayMessage = String.Empty;
+                _staticViewRendered = true;
+            }
+
+            DisplayText.text = _displayMessage;
         }
 
-        DisplayText.text = _displayMessage;
-    }
+        private void RenderTexture(Texture texture)
+        {
+            RawImage image = this.GetComponent<RawImage>();
+            if (image.texture != texture)
+                image.texture = texture;
+            //image.sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f));
+        }
 
-    private void RenderTexture(Texture texture)
-    {
-        RawImage image = this.GetComponent<RawImage>();
-        if (image.texture != texture)
-            image.texture = texture;
-        //image.sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f));
-    }
-
-    private void ResizeTexture(Texture texture)
-    {
-        RawImage image = this.GetComponent<RawImage>();
-        var transform = image.rectTransform;
-        transform.sizeDelta = new Vector2(texture.width, texture.height);
-        transform.position = new Vector3(-texture.width / 2, -texture.height / 2);
-        transform.anchoredPosition = new Vector2(0, 0);
+        private void ResizeTexture(Texture texture)
+        {
+            RawImage image = this.GetComponent<RawImage>();
+            var iTransform = image.rectTransform;
+            iTransform.sizeDelta = new Vector2(texture.width, texture.height);
+            iTransform.position = new Vector3(-texture.width / 2, -texture.height / 2);
+            iTransform.anchoredPosition = new Vector2(0, 0);
+        }
     }
 }

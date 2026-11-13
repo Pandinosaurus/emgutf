@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# Builds everything needed for the MAUI Android nuget package on Ubuntu or macOS:
+#  1. the native TensorFlow library for the four Android ABIs (arm64, arm, x86, x86_64),
+#     with build_tf_android, into lib/android/<abi>/
+#  2. the native TensorFlow library for the host OS (Ubuntu or macOS), which Emgu.TF.CodeGen
+#     loads to generate Graph.g.cs
+#  3. Emgu TF for the host OS (build_emgutf), which runs the code generator, builds the
+#     managed libraries and nuget packages and, as the Android binaries and the android dotnet
+#     workload are present, the Emgu.TF.runtime.maui.android nuget package in platforms/nuget/
+#
+# This is a full TensorFlow compile for each of the five native builds, so it takes a long time.
+# Bazel resumes from its cache, so the script can be run again after a failure.
+# Usage: ./build_tf_android_all_arch
+# Needs ANDROID_HOME (and, on Ubuntu, the dependencies installed by apt_install_dependency.sh
+# and platforms/ubuntu/<version>/apt_install_dependency.sh) exported/installed first. On
+# macOS, needs the same dependencies as platforms/macos/bazel_build_tf_macos and build_emgutf
+# (Bazel, Xcode command line tools, the Android SDK/NDK and the maui-android dotnet workload).
+
+# Stop at the first failing step.
+set -e
+
+cd "$(dirname "$0")"
+
+# Known limitation: on macOS, this Android NDK cross-compile step can fail with "absolute
+# path inclusion(s) found in rule ... SDKSettings.json" while compiling a host-side ("[for
+# tool]") dependency such as upb/protobuf. Cause: Apple clang's driver unconditionally reads
+# the SDK's SDKSettings.json when -isysroot points into it (confirmed independent of
+# -mmacosx-version-min or an explicit -target triple), and Bazel 7.7.0 (pinned by
+# tensorflow/.bazelversion) has no flag that disables its undeclared-absolute-path-dependency
+# check for this transitive (non-top-level) target - incompatible_validate_top_level_header_
+# inclusions only covers top-level requested targets. Not hit on Ubuntu, whose host toolchain
+# has no Xcode SDK bundle to probe. A real fix needs either a toolchain-config change (making
+# the auto-generated local C++ toolchain declare the Xcode SDK path as a builtin include
+# directory) or a newer pinned Bazel version - both out of scope here; not fixed as of this
+# writing.
+for arch in arm64 arm x86 x86_64; do
+    echo "===== Building TensorFlow for Android $arch ====="
+    ./build_tf_android $arch
+done
+
+HOST_OS="$(uname)"
+if [ "$HOST_OS" = "Darwin" ]; then
+    HOST_DIR=../macos
+    BAZEL_BUILD_TF="$HOST_DIR/bazel_build_tf_macos"
+    JOBS=$(sysctl -n hw.ncpu)
+else
+    # Use the scripts of the running Ubuntu version, or 26.04 if there are none for it.
+    UBUNTU_VERSION=$(. /etc/os-release && echo "$VERSION_ID")
+    HOST_DIR=../ubuntu/$UBUNTU_VERSION
+    if [ ! -d "$HOST_DIR" ]; then
+        HOST_DIR=../ubuntu/26.04
+    fi
+    BAZEL_BUILD_TF="$HOST_DIR/bazel_build_tf"
+    JOBS=$(nproc)
+fi
+
+echo "===== Building the native TensorFlow library for the host OS ($HOST_DIR) ====="
+if [ "$HOST_OS" = "Darwin" ]; then
+    # bazel_build_tf_macos runs TensorFlow's interactive ./configure; answer every
+    # remaining prompt (not already pre-answered by exported TF_* env vars) with its
+    # default by piping empty lines to it.
+    yes "" | "$BAZEL_BUILD_TF"
+else
+    "$BAZEL_BUILD_TF"
+fi
+
+echo "===== Building Emgu TF for the host OS and the MAUI Android nuget package ($HOST_DIR) ====="
+"$HOST_DIR/build_emgutf" -j"$JOBS"
+
+echo "===== Done. The nuget packages are in platforms/nuget ====="
+ls -l ../nuget/*.nupkg

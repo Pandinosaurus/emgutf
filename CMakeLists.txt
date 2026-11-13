@@ -1,5 +1,5 @@
 # --------------------------------------------------------
-# Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.
+# Copyright (C) 2004-2026 by EMGU Corporation. All rights reserved.
 # 
 # Root CMake file for Emgu TF
 #
@@ -8,8 +8,11 @@
 #
 # --------------------------------------------------------
 
+CMAKE_MINIMUM_REQUIRED(VERSION 3.16)
+
+SET(EMGU_TF_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+
 PROJECT(emgutf)
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8.1)
 
 # ----------------------------------------------------------------------------
 #  Autodetect if we are in a GIT repository
@@ -54,8 +57,8 @@ SET(CSC_TARGET_FRAMEWORK "" CACHE STRING "C# target framework")
 FIND_PACKAGE(CSharp REQUIRED)
 MESSAGE(STATUS "DOTNET_FOUND: ${DOTNET_FOUND}")
 INCLUDE (CheckPlatform)
-IF ( (IS_UBUNTU OR IS_RASPBIAN) AND NOT (DOTNET_FOUND))
-  MESSAGE(FATAL_ERROR "dotnet core is required to build Emgu TF on Ubuntu, please follow the instructions to install dotnet core on Ubuntu: https://dotnet.microsoft.com/download/linux-package-manager/ubuntu18-04/sdk-current")  
+IF ( (IS_UBUNTU OR IS_DEBIAN) AND NOT (DOTNET_FOUND))
+  MESSAGE(FATAL_ERROR "dotnet is required to build Emgu TF, please follow the instructions to install dotnet: https://dotnet.microsoft.com/download/dotnet")  
 ENDIF()
 #MESSAGE(STATUS "IS_UBUNTU: ${IS_UBUNTU}")
 INCLUDE (CSharpMacros)
@@ -74,18 +77,16 @@ MACRO(CHECK_LICENSE_TYPE)
   STRING(STRIP "${TMP}" TMP)
   STRING(LENGTH "${TMP}" GPL_LICENSE_LENGTH)
   SET (LICENSE_TYPE "Dual License")
-  #SET (EMGUTF_LICENSE_FILE ${LICENSE_FILE_NAME})
-  #SET (EMGUTF_LICENSE_URL "https://www.gnu.org/licenses/gpl-3.0.txt")
   IF(${GPL_LICENSE_LENGTH} EQUAL 0)
     SET(LICENSE_TYPE "Commercial")
-    #	SET (EMGUTF_LICENSE_URL "http://www.emgu.com/wiki/files/Emgu.TF.Commercial.License.1.0.pdf")
   ENDIF()
   
   MESSAGE(STATUS "LICENSE_TYPE: ${LICENSE_TYPE}")
 ENDMACRO()
 
 CHECK_LICENSE_TYPE()
-SET(EMGUTF_MAIN_WEB_URL "http://www.emgu.com/wiki/index.php/Emgu_TF")
+SET(NUGET_EMGU_URL "https://www.emgu.com")
+SET(EMGUTF_MAIN_WEB_URL "${NUGET_EMGU_URL}/wiki/index.php/Emgu_TF")
 
 
 IF(MSVC)
@@ -94,18 +95,44 @@ ENDIF()
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ${ENABLE_SOLUTION_FOLDERS})
 
+IF(WIN32)
+  INCLUDE (FindCodeSign)
+ENDIF()
+
 # ----------------------------------------------------------------------------
 #  Check if 32bit or 64-bit
 # ----------------------------------------------------------------------------
 INCLUDE (CheckTargetArch)
 CHECK_TARGET_ARCH()
 
+IF ( TARGET_ARCH_64 )
+  IF (TARGET_ARM)
+    SET(NUGET_NATIVE_PLATFORM_ID_ARCH "arm64")
+  ELSE()
+    SET(NUGET_NATIVE_PLATFORM_ID_ARCH "x64")
+  ENDIF()
+ELSE()
+  IF (TARGET_ARM)
+    SET(NUGET_NATIVE_PLATFORM_ID_ARCH "arm")
+  ELSE()
+    SET(NUGET_NATIVE_PLATFORM_ID_ARCH "x86")
+  ENDIF()
+ENDIF()
+
+IF ( IS_UBUNTU )
+  #MESSAGE(STATUS "TARGET_ARCH_64: ${TARGET_ARCH_64}")
+  SET(NUGET_NATIVE_PLATFORM_ID_UBUNTU "${LSB_RELEASE_ID_SHORT}.${LSB_RELEASE_RELEASE_SHORT}-${NUGET_NATIVE_PLATFORM_ID_ARCH}")
+  STRING(TOLOWER "${NUGET_NATIVE_PLATFORM_ID_UBUNTU}" NUGET_NATIVE_PLATFORM_ID_UBUNTU)
+  MESSAGE(STATUS "NUGET_NATIVE_PLATFORM_ID_UBUNTU: ${NUGET_NATIVE_PLATFORM_ID_UBUNTU}")
+ELSE()
+  SET(NUGET_NATIVE_PLATFORM_ID_UBUNTU "ubuntu.26.04-x64")
+ENDIF()
+
 IF (WIN32)
   MESSAGE(STATUS "CMAKE_SYSTEM_NAME: ${CMAKE_SYSTEM_NAME}")
   IF(TARGET_ARCH_64)
     SET(EMGUTF_ARCH win64)
   ELSE()
-    #ELSEIF ( ("${CMAKE_SYSTEM_NAME}" STREQUAL "WindowsPhone") OR ("${CMAKE_SYSTEM_NAME}" STREQUAL "WindowsStore") )
     MESSAGE(STATUS "CMAKE_GENERATOR: ${CMAKE_GENERATOR}")
     STRING(FIND "${CMAKE_GENERATOR}" "ARM" IS_ARM)
     IF(IS_ARM GREATER -1)
@@ -116,12 +143,24 @@ IF (WIN32)
   ENDIF()
 ELSEIF(IS_UBUNTU)
   IF(TARGET_ARCH_64)
-    SET(EMGUTF_ARCH "ubuntu_x64")
+	IF(TARGET_ARM)
+	  SET(EMGUTF_ARCH "ubuntu_arm64")
+	ELSE()
+	  SET(EMGUTF_ARCH "ubuntu_x64")
+	ENDIF()
   ELSE()
-    SET(EMGUTF_ARCH "ubuntu_x86")
+    IF(TARGET_ARM)
+	  SET(EMGUTF_ARCH "ubuntu_arm")
+	ELSE()
+      SET(EMGUTF_ARCH "ubuntu_x86")
+	ENDIF()
   ENDIF()
-ELSEIF(IS_RASPBIAN)
-  SET(EMGUTF_ARCH "raspbian_arm")
+ELSEIF(IS_DEBIAN)
+  IF(TARGET_ARCH_64)
+    SET(EMGUTF_ARCH "debian_arm64")
+  ELSE()
+    SET(EMGUTF_ARCH "debian_arm")
+  ENDIF()
 ELSE()
   SET(EMGUTF_ARCH ${CMAKE_SYSTEM_NAME})
 ENDIF()
@@ -131,40 +170,14 @@ MESSAGE(STATUS "Building for ${EMGUTF_ARCH}")
 SET(LIBRARY_OUTPUT_PATH ${CMAKE_SOURCE_DIR}/lib)
 IF(WIN32)
   IF ("${EMGUTF_ARCH}" STREQUAL "win64")
-    IF("${CMAKE_SYSTEM_NAME}" STREQUAL "WindowsStore")
-      IF(CMAKE_SYSTEM_VERSION MATCHES 8.1)
-	SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/store8_1_x64")
-      ELSE()
-	SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/UWP_x64")
-      ENDIF()
-    ELSE()
-      SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/x64")
-    ENDIF()
+      SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/runtimes/win-x64/native")
   ELSEIF("${EMGUTF_ARCH}" STREQUAL "arm")
-    IF("${CMAKE_SYSTEM_NAME}" STREQUAL "WindowsPhone")
-      SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/phone8_1_arm")
-    ELSE()
-      IF(CMAKE_SYSTEM_VERSION MATCHES 10.0)
-	SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/UWP_arm")
-      ELSE()
 	SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/arm")
-      ENDIF()
-    ENDIF()
+  ELSEIF("${EMGUTF_ARCH}" STREQUAL "arm64")
+	SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/arm64")
   ELSE()
-    IF("${CMAKE_SYSTEM_NAME}" STREQUAL "WindowsPhone")
-      SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/phone8_1_x86")
-    ELSEIF("${CMAKE_SYSTEM_NAME}" STREQUAL "WindowsStore")
-      IF(CMAKE_SYSTEM_VERSION MATCHES 10.0)
-	SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/UWP_x86")
-      ELSE()
-	SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/store8_1_x86")
-      ENDIF()
-    ELSE()
-      SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/x86")
-    ENDIF()
+    SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/x86")
   ENDIF()
-  #ELSEIF(APPLE)
-  #  SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "/lib")
 ELSEIF()
   SET(UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER "")
 ENDIF()
@@ -204,38 +217,38 @@ MACRO(CHECK_BINARY_EXIST folder patterns property_name second_check)
 ENDMACRO()
 
 
-#CHECK_BINARY_EXIST("lib/ios" "libtfextern.a" HAVE_IOS OFF)
-CHECK_BINARY_EXIST("lib/ios" "libtfliteextern.a" HAVE_IOS_LITE OFF)
-#CHECK_BINARY_EXIST("lib/osx" "{libtfextern|libtensorflow_framework}.dylib" HAVE_OSX OFF)
-CHECK_BINARY_EXIST("lib/osx" "libtensorflow_framework.dylib;libtfextern.dylib" HAVE_OSX OFF)
-#CHECK_BINARY_EXIST("lib/osx" "*.dylib" HAVE_OSX OFF)
-#CHECK_BINARY_EXIST("lib/osx" "libtfextern.dylib" HAVE_OSX OFF)
-CHECK_BINARY_EXIST("lib/osx" "libtfliteextern.dylib" HAVE_OSX_LITE OFF)
-CHECK_BINARY_EXIST("lib/x64" "libtfextern.so" HAVE_LINUX_X86_64 OFF)
-CHECK_BINARY_EXIST("lib/x64" "libtfliteextern.so" HAVE_LINUX_X86_64_LITE OFF)
-CHECK_BINARY_EXIST("lib/arm" "libtfextern.so" HAVE_LINUX_ARM OFF)
-CHECK_BINARY_EXIST("lib/arm" "libtfliteextern.so" HAVE_LINUX_ARM_LITE OFF)
+#CHECK_BINARY_EXIST("lib/runtimes/osx/native" "libtensorflow_framework.dylib;libtfextern.dylib" HAVE_OSX OFF)
+CHECK_BINARY_EXIST("lib/runtimes/osx/native" "libtfextern.dylib" HAVE_OSX OFF)
+CHECK_BINARY_EXIST("lib/runtimes/linux-x64/native" "libtfextern.so" HAVE_LINUX_X86_64 OFF)
+CHECK_BINARY_EXIST("lib/runtimes/ubuntu-x64/native" "libtfextern.so" HAVE_UBUNTU_X86_64 OFF)
+CHECK_BINARY_EXIST("lib/runtimes/ubuntu-arm64/native" "libtfextern.so" HAVE_UBUNTU_ARM64 OFF)
+CHECK_BINARY_EXIST("lib/runtimes/linux-arm/native" "libtfextern.so" HAVE_LINUX_ARM OFF)
+CHECK_BINARY_EXIST("lib/runtimes/linux-arm64/native" "libtfextern.so" HAVE_LINUX_ARM64 OFF)
 CHECK_BINARY_EXIST("lib/android/arm64-v8a" "libtfextern.so" HAVE_ANDROID_ARM64_V8A OFF)
-CHECK_BINARY_EXIST("lib/android/arm64-v8a" "libtfliteextern.so" HAVE_ANDROID_ARM64_V8A_LITE OFF)
-#CHECK_BINARY_EXIST("lib/android/armeabi" "libtfextern.so" HAVE_ANDROID_ARMEABI OFF)
-#CHECK_BINARY_EXIST("lib/android/armeabi" "libtfliteextern.so" HAVE_ANDROID_ARMEABI_LITE OFF)
 CHECK_BINARY_EXIST("lib/android/armeabi-v7a" "libtfextern.so" HAVE_ANDROID_ARMEABI_V7A OFF)
-CHECK_BINARY_EXIST("lib/android/armeabi-v7a" "libtfliteextern.so" HAVE_ANDROID_ARMEABI_V7A_LITE OFF)
 CHECK_BINARY_EXIST("lib/android/x86" "libtfextern.so" HAVE_ANDROID_X86 OFF)
-CHECK_BINARY_EXIST("lib/android/x86" "libtfliteextern.so" HAVE_ANDROID_X86_LITE OFF)
 CHECK_BINARY_EXIST("lib/android/x86_64" "libtfextern.so" HAVE_ANDROID_X86_64 OFF)
-CHECK_BINARY_EXIST("lib/android/x86_64" "libtfliteextern.so" HAVE_ANDROID_X86_64_LITE OFF)
 
-SET(HAVE_LINUX OFF)
-IF(HAVE_LINUX_X86_64 OR HAVE_LINUX_ARM)
-  SET(HAVE_LINUX ON)
-  MESSAGE(STATUS "HAVE_LINUX: ${HAVE_LINUX}")
+IF (IS_DEBIAN)
+  SET(NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM "linux-arm")
+  STRING(TOLOWER "${NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM}" NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM)
+  SET(NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM64 "linux-arm64")
+  STRING(TOLOWER "${NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM64}" NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM64)
+ELSE()
+  IF(HAVE_LINUX_ARM)
+    SET(NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM "linux-arm")
+    STRING(TOLOWER "${NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM}" NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM)
+  ENDIF()
+  IF(HAVE_LINUX_ARM64)
+    SET(NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM64 "linux-arm64")
+    STRING(TOLOWER "${NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM64}" NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM64)
+  ENDIF()
 ENDIF()
 
-SET(HAVE_LINUX_LITE OFF)
-IF(HAVE_LINUX_X86_64_LITE OR HAVE_LINUX_ARM_LITE)
-  SET(HAVE_LINUX_LITE ON)
-  MESSAGE(STATUS "HAVE_LINUX_LITE: ${HAVE_LINUX_LITE}")
+SET(HAVE_LINUX OFF)
+IF(HAVE_LINUX_X86_64 OR HAVE_LINUX_ARM OR HAVE_LINUX_ARM64)
+  SET(HAVE_LINUX ON)
+  MESSAGE(STATUS "HAVE_LINUX: ${HAVE_LINUX}")
 ENDIF()
 
 SET(HAVE_ANDROID OFF)
@@ -245,25 +258,19 @@ IF(HAVE_ANDROID_ARM64_V8A OR HAVE_ANDROID_ARMEABI_V7A OR HAVE_ANDROID_X86 OR HAV
   MESSAGE(STATUS "HAVE_ANDROID: ${HAVE_ANDROID}")
 ENDIF()
 
-SET(HAVE_ANDROID_LITE OFF)
-#IF(HAVE_ANDROID_ARM64_V8A_LITE OR HAVE_ANDROID_ARMEABI_LITE OR HAVE_ANDROID_ARMEABI_V7A_LITE OR HAVE_ANDROID_X86_LITE OR HAVE_ANDROID_X86_64_LITE)
-IF(HAVE_ANDROID_ARM64_V8A_LITE OR HAVE_ANDROID_ARMEABI_V7A_LITE OR HAVE_ANDROID_X86_LITE OR HAVE_ANDROID_X86_64_LITE)
-  SET(HAVE_ANDROID_LITE ON) 
-ENDIF()
-IF(HAVE_ANDROID_LITE)
-  MESSAGE(STATUS "HAVE_ANDROID_LITE: ${HAVE_ANDROID_LITE}")
-ENDIF()
+CHECK_BINARY_EXIST("lib/runtimes/win-x64/native" "tfextern.dll" HAVE_WINDESKTOP_X64 OFF)
+CHECK_BINARY_EXIST("lib/runtimes/win-x64/native" "cudart64*.dll" HAVE_WINDESKTOP_X64_CUDA OFF)
 
-#CHECK_BINARY_EXIST("lib/x86" "tfextern.dll" HAVE_WINDESKTOP_X86 OFF)
-CHECK_BINARY_EXIST("lib/x64" "tfextern.dll" HAVE_WINDESKTOP_X64 OFF)
-#CHECK_BINARY_EXIST("lib/x86" "tfliteextern.dll" HAVE_WINDESKTOP_X86_LITE OFF)
-CHECK_BINARY_EXIST("lib/x64" "tfliteextern.dll" HAVE_WINDESKTOP_X64_LITE OFF)
-CHECK_BINARY_EXIST("lib/x64" "cudart64*.dll" HAVE_WINDESKTOP_X64_CUDA OFF)
+CHECK_BINARY_EXIST("lib/runtimes/win-x64/native" "libiomp5md.dll" HAVE_WINDESKTOP_MKL OFF)
 
-IF(HAVE_WINDESKTOP_X64_CUDA)
-  SET(WINDESKTOP_LABEL "-windesktop_x64-cuda")
-ELSEIF(HAVE_WINDESKTOP_X64)	
+IF(HAVE_WINDESKTOP_X64)	
   SET(WINDESKTOP_LABEL "-windesktop_x64")
+  IF(HAVE_WINDESKTOP_MKL) 
+    SET(WINDESKTOP_LABEL "${WINDESKTOP_LABEL}_mkl")
+  ENDIF()
+  IF(HAVE_WINDESKTOP_X64_CUDA)
+    SET(WINDESKTOP_LABEL "${WINDESKTOP_LABEL}_cuda")
+  ENDIF()
 ELSE() 
   SET(WINDESKTOP_LABEL "")
 ENDIF()
@@ -274,47 +281,15 @@ IF(HAVE_WINDESKTOP_X64 OR HAVE_WINDESKTOP_X64_CUDA)
   MESSAGE(STATUS "HAVE_WINDESKTOP: ${HAVE_WINDESKTOP}")
 ENDIF()
 
-
-IF (HAVE_WINDESKTOP_X64_LITE)
-  SET(WINDESKTOP_LITE_LABEL "-windesktop_x64")
-  IF(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tensorflow/bazel-bin/external/XNNPACK)
-	SET(HAVE_WINDESKTOP_X64_LITE_XNN ON)
-	SET(WINDESKTOP_LITE_LABEL "${WINDESKTOP_LITE_LABEL}_xnn")
-  ENDIF()
-ENDIF()
-SET(HAVE_WINDESKTOP_LITE OFF)
-IF(HAVE_WINDESKTOP_X64_LITE)
-  SET(HAVE_WINDESKTOP_LITE ON) 
-  MESSAGE(STATUS "HAVE_WINDESKTOP_LITE: ${HAVE_WINDESKTOP_LITE}")
-ENDIF()
-
 SET(WINDOWS_LABEL "${WINDESKTOP_LABEL}")
 IF ("${WINDOWS_LABEL}" STREQUAL "-UWP-windesktop")
   SET(WINDOWS_LABEL "-windows")
 ENDIF()
 
-#SET(IOS_LABEL "")
-#IF(HAVE_IOS)
-#  #MESSAGE(STATUS "HAVE_IOS: ${HAVE_IOS}")
-#  SET(IOS_LABEL "-ios")
-#ENDIF()
-
-SET(IOS_LITE_LABEL "")
-IF(HAVE_IOS_LITE)
-  #MESSAGE(STATUS "HAVE_IOS_LITE: ${HAVE_IOS_LITE}")
-  SET(IOS_LITE_LABEL "-ios")
-ENDIF()
-
 SET(OSX_LABEL "")
 IF(HAVE_OSX)
   #MESSAGE(STATUS "HAVE_OSX: ${HAVE_OSX}")
-  SET(OSX_LABEL "-osx")
-ENDIF()	
-
-SET(OSX_LITE_LABEL "")
-IF(HAVE_OSX_LITE)
-  #MESSAGE(STATUS "HAVE_OSX_LITE: ${HAVE_OSX_LITE}")
-  SET(OSX_LITE_LABEL "-osx")
+  SET(OSX_LABEL "-macos")
 ENDIF()
 
 SET(ANDROID_LABEL "")
@@ -334,23 +309,6 @@ IF(HAVE_ANDROID_X86_64)
   SET(ANDROID_LABEL "${ANDROID_LABEL}-x86_64")
 ENDIF()
 
-SET(ANDROID_LITE_LABEL "")
-IF(HAVE_ANDROID_ARM64_V8A_LITE)
-  SET(ANDROID_LITE_LABEL "${ANDROID_LITE_LABEL}-arm64-v8a")
-ENDIF()
-#IF(HAVE_ANDROID_ARMEABI_LITE)
-#  SET(ANDROID_LITE_LABEL "${ANDROID_LITE_LABEL}-armeabi")
-#ENDIF()
-IF(HAVE_ANDROID_ARMEABI_V7A_LITE)	
-  SET(ANDROID_LITE_LABEL "${ANDROID_LITE_LABEL}-armeabi-v7a")
-ENDIF()
-IF(HAVE_ANDROID_X86_LITE)
-  SET(ANDROID_LITE_LABEL "${ANDROID_LITE_LABEL}-x86")
-ENDIF()
-IF(HAVE_ANDROID_X86_64_LITE)
-  SET(ANDROID_LITE_LABEL "${ANDROID_LITE_LABEL}-x86_64")
-ENDIF()
-
 CHECK_BINARY_EXIST("bin" "Emgu.TF.Runtime.*" HAVE_PREBUILD_EMGU_TF_WORLD OFF)
 
 #IF("${ANDROID_LABEL}" STREQUAL "-arm64-v8a-armeabi-armeabi-v7a-x86-x86_64")
@@ -360,23 +318,10 @@ ELSEIF(NOT ("${ANDROID_LABEL}" STREQUAL ""))
   SET(ANDROID_LABEL "-android${ANDROID_LABEL}")
 ENDIF()
 
-#IF("${ANDROID_LITE_LABEL}" STREQUAL "-arm64-v8a-armeabi-armeabi-v7a-x86-x86_64")
-IF("${ANDROID_LITE_LABEL}" STREQUAL "-arm64-v8a-armeabi-v7a-x86-x86_64")
-  SET(ANDROID_LITE_LABEL "-android")
-ELSEIF(NOT ("${ANDROID_LITE_LABEL}" STREQUAL ""))
-  SET(ANDROID_LITE_LABEL "-android${ANDROID_LITE_LABEL}")
-ENDIF()
-
 SET(HAVE_FULL_BUILD OFF)
-IF(HAVE_ANDROID OR HAVE_OSX OR HAVE_WINDESKTOP_X64 OR HAVE_WINDESKTOP_X64_CUDA OR HAVE_LINUX)
+IF(HAVE_ANDROID OR HAVE_OSX OR HAVE_WINDESKTOP_X64 OR HAVE_WINDESKTOP_X64_CUDA OR HAVE_LINUX OR HAVE_UBUNTU_X86_64 OR HAVE_UBUNTU_ARM64)
   SET(HAVE_FULL_BUILD ON)
   MESSAGE(STATUS "Have Tensorflow full build: ${HAVE_FULL_BUILD}")
-ENDIF()
-
-SET(HAVE_LITE_BUILD OFF)
-IF(HAVE_ANDROID_LITE OR HAVE_IOS_LITE OR HAVE_OSX_LITE OR HAVE_WINDESKTOP_LITE OR HAVE_LINUX_LITE)
-  SET(HAVE_LITE_BUILD ON)
-  MESSAGE(STATUS "Have Tensorflow Lite build: ${HAVE_LITE_BUILD}")
 ENDIF()
 
 if ("${LICENSE_TYPE}" STREQUAL "Commercial")
@@ -389,7 +334,8 @@ ENDIF()
 #  Setup Package information
 # ----------------------------------------------------------------------------
 SET(PACKAGE "${PROJECT_NAME}")
-SET(CPACK_PACKAGE_CONTACT "Emgu TF SUPPORT <support@emgu.com>")
+SET(GITHUB_REPO_URL "https://github.com/emgucv/emgutf")
+SET(CPACK_PACKAGE_CONTACT "Emgu TF support <support@emgu.com>")
 SET(PACKAGE_BUGREPORT "${CPACK_PACKAGE_CONTACT}")
 SET(PACKAGE_NAME "${PROJECT_NAME}")
 
@@ -397,25 +343,13 @@ SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Emgu TF is a cross platform .Net wrapper 
 SET(FULL_BUILD_LABEL "")
 IF(HAVE_FULL_BUILD)
   SET(FULL_BUILD_LABEL "${ANDROID_LABEL}${WINDOWS_LABEL}${OSX_LABEL}")
-  IF("${FULL_BUILD_LABEL}" STREQUAL "-android-windesktop_x64-osx")
+  IF( ("${FULL_BUILD_LABEL}" STREQUAL "-android-windesktop_x64_mkl-macos") OR ("${FULL_BUILD_LABEL}" STREQUAL "-android-windesktop_x64-macos"))
     SET(FULL_BUILD_LABEL "-pro")
   ENDIF()
   SET(FULL_BUILD_LABEL "tf${FULL_BUILD_LABEL}")
 ENDIF()
-SET(LITE_BUILD_LABEL "")
-IF(HAVE_LITE_BUILD)
-  SET(LITE_BUILD_LABEL "${IOS_LITE_LABEL}${ANDROID_LITE_LABEL}${WINDESKTOP_LITE_LABEL}${OSX_LITE_LABEL}")
-  IF("${LITE_BUILD_LABEL}" STREQUAL "-ios-android-windesktop_x64_xnn-osx")
-    SET(LITE_BUILD_LABEL "-pro")
-  ENDIF()
-  SET(LITE_BUILD_LABEL "tflite${LITE_BUILD_LABEL}")
-ENDIF()
 
-IF(HAVE_FULL_BUILD AND HAVE_LITE_BUILD)
-  SET(CPACK_PACKAGE_NAME "emgu${FULL_BUILD_LABEL}-${LITE_BUILD_LABEL}")
-ELSE()
-  SET(CPACK_PACKAGE_NAME "emgu${FULL_BUILD_LABEL}${LITE_BUILD_LABEL}")
-ENDIF()
+SET(CPACK_PACKAGE_NAME "emgu${FULL_BUILD_LABEL}")
 
 #SET(CPACK_PACKAGE_NAME "${PACKAGE_NAME}")
 
@@ -431,6 +365,9 @@ SET(CPACK_PACKAGE_FILE_NAME "lib${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}${
 
 MESSAGE(STATUS "CPACK_PACKAGE_FILE_NAME is ${CPACK_PACKAGE_FILE_NAME}")
 FILE(WRITE "emgutf.version.txt" "${CPACK_PACKAGE_VERSION}${LICENSE_LABEL}")
+
+#SET(CPACK_PACKAGE_DEPENDENCY_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}.*")
+SET(CPACK_PACKAGE_DEPENDENCY_VERSION "${CPACK_PACKAGE_VERSION}")
 
 SET(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/${LICENSE_FILE_NAME}")
 
@@ -472,6 +409,10 @@ SET(EMGUTF_NUGET_BASE_ID "Emgu.TF")
 SET(EMGUTF_NUGET_ID "${EMGUTF_NUGET_BASE_ID}")
 SET(EMGUTF_MODEL_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.Models")
 SET(EMGUTF_PROTOBUF_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.Protobuf")
+SET(EMGU_WINDOWS_MSVCRT_X86_NUGET_ID "Emgu.runtime.windows.msvc.rt.x86")
+SET(EMGU_WINDOWS_MSVCRT_X64_NUGET_ID "Emgu.runtime.windows.msvc.rt.x64")
+SET(EMGU_ZLIBWAPI_ID "Emgu.runtime.windows.zlibwapi.x64")
+SET(EMGU_ZLIBWAPI_VERSION "1.2.3")
 
 SET(EMGUTF_NUGET_TITLE_ARCH "")
 IF(HAVE_WINDESKTOP_X86)
@@ -499,280 +440,265 @@ IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
   #SET(EMGUTF_PROTOBUF_NUGET_TITLE "${EMGUTF_PROTOBUF_NUGET_TITLE} Commercial Release")
 ENDIF()
 
+#IF(EMGU_SIGN_FOUND AND WIN32)
+#  file(TO_NATIVE_PATH ${EMGU_SIGN_EXECUTABLE} EMGU_SIGN_EXECUTABLE_NATIVE_PATH)
+#  file(TO_NATIVE_PATH ${SIGNTOOL_EXECUTABLE} SIGNTOOL_EXECUTABLE_NATIVE_PATH)
+#ENDIF()
+
+#IF(EMGU_NUGET_SIGN_FOUND AND WIN32)
+#  file(TO_NATIVE_PATH ${EMGU_NUGET_SIGN_EXECUTABLE} EMGU_NUGET_SIGN_EXECUTABLE_NATIVE_PATH)
+#  file(TO_NATIVE_PATH ${NUGET_EXECUTABLE} NUGET_EXECUTABLE_NATIVE_PATH)
+#ENDIF()
+
 SET(EMGUTF_WINDOWS_NUGET_FILE_LIST "")
 
 IF(HAVE_WINDESKTOP)
+  SET(EMGUTF_WINDOWS_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.runtime.windows")  
+  SET(EMGUTF_WINDOWS_NUGET_TITLE "Native runtime of ${EMGUTF_NUGET_TITLE} for Windows")
+  IF(HAVE_WINDESKTOP_MKL)
+    SET(EMGUTF_WINDOWS_NUGET_ID "${EMGUTF_WINDOWS_NUGET_ID}.mkl")  
+    SET(EMGUTF_WINDOWS_NUGET_TITLE "${EMGUTF_WINDOWS_NUGET_TITLE} built with MKL")	
+  ENDIF()
   IF(HAVE_WINDESKTOP_X64_CUDA)
-    SET(EMGUTF_WINDOWS_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.runtime.windows.cuda")  
-    SET(EMGUTF_WINDOWS_NUGET_TITLE "Native runtime of ${EMGUTF_NUGET_TITLE} for Windows with CUDA support")	
-  ELSE()
-    SET(EMGUTF_WINDOWS_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.runtime.windows")  
-    SET(EMGUTF_WINDOWS_NUGET_TITLE "Native runtime of ${EMGUTF_NUGET_TITLE} for Windows")	
+    SET(EMGUTF_WINDOWS_NUGET_ID "${EMGUTF_WINDOWS_NUGET_ID}.cuda")
+	IF (HAVE_WINDESKTOP_MKL)
+	  SET(EMGUTF_WINDOWS_NUGET_TITLE "${EMGUTF_WINDOWS_NUGET_TITLE} and CUDA support")	
+	ELSE()
+	  SET(EMGUTF_WINDOWS_NUGET_TITLE "${EMGUTF_WINDOWS_NUGET_TITLE} built with CUDA support")	
+    ENDIF()	
   ENDIF()
 
-  IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
-    SET(EMGUTF_WINDOWS_NUGET_ID "${EMGUTF_WINDOWS_NUGET_ID}-CR")
-  ENDIF()
+  #IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
+  #  SET(EMGUTF_WINDOWS_NUGET_ID "${EMGUTF_WINDOWS_NUGET_ID}-CR")
+  #ENDIF()
   SET(EMGUTF_WINDOWS_NUGET_FILE_LIST "${EMGUTF_WINDOWS_NUGET_FILE_LIST}  
 	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />
-	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-	<file src=\"Emgu.TF.runtime.windows.targets\" target=\"build\\${EMGUTF_WINDOWS_NUGET_ID}.targets\" />")
+	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />")
   SET(EMGUTF_WINDOWS_NUGET_DEPENDENCY "${EMGUTF_WINDOWS_NUGET_DEPENDENCY}
-		<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />") 
+		<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"${CPACK_PACKAGE_DEPENDENCY_VERSION}\" />") 
 ENDIF()
 
-
-IF(HAVE_ANDROID)
-  SET(EMGUTF_ANDROID_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.runtime.android")
-  IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
-    SET(EMGUTF_ANDROID_NUGET_ID "${EMGUTF_ANDROID_NUGET_ID}-CR")  
+#IF(HAVE_ANDROID)	
+  SET(EMGUTF_MAUI_ANDROID_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.runtime.maui.android")
+  SET(EMGUTF_MAUI_ANDROID_NUGET_TITLE "Native Android runtime of ${EMGUTF_NUGET_TITLE} for MAUI")	
+	
+  CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.maui.android.Directory.Build.props.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Runtime/Maui/Android/Full/Directory.Build.props)
+  IF(EMGU_SIGN_FOUND AND WIN32)
+    CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/SignBinary.Targets.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Runtime/Maui/Android/Full/SignBinary.Targets)
   ENDIF()
-  SET(EMGUTF_ANDROID_NUGET_TITLE "Native runtime of ${EMGUTF_NUGET_TITLE} for Android")	
-  SET(EMGUTF_ANDROID_NUGET_FILE_LIST " 
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Runtime.Android.dll\" target=\"lib\\MonoAndroid50\" />
-	<file src=\"..\\..\\..\\lib\\Emgu.TF.Runtime.Android.xml\" target=\"lib\\MonoAndroid50\" />
-	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
-  SET(EMGUTF_ANDROID_NUGET_DEPENDENCY "${EMGUTF_ANDROID_NUGET_DEPENDENCY}
-    <dependencies>
-		<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
-    </dependencies>") 
-ENDIF()
+  IF(EMGU_NUGET_SIGN_FOUND AND WIN32)
+    CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/SignPkg.Targets.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Runtime/Maui/Android/Full/SignPkg.Targets)
+  ENDIF()
+  CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.maui.android.Package.README.md.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Runtime/Maui/Android/Full/docs/README.md)
+#ENDIF()
 
 IF(HAVE_OSX)
-  SET(EMGUTF_MACOS_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.runtime.mac")
-  IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
-    SET(EMGUTF_MACOS_NUGET_ID "${EMGUTF_MACOS_NUGET_ID}-CR")  
-  ENDIF()
+  SET(EMGUTF_MACOS_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.runtime.macos")
+  #IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
+  #  SET(EMGUTF_MACOS_NUGET_ID "${EMGUTF_MACOS_NUGET_ID}-CR")  
+  #ENDIF()
   SET(EMGUTF_MACOS_NUGET_TITLE "Native runtime of ${EMGUTF_NUGET_TITLE} for MacOS")	
   SET(EMGUTF_MACOS_NUGET_FILE_LIST " 
-    <file src=\"..\\..\\..\\lib\\osx\\*.dylib\" target=\"build\" />
+    <file src=\"..\\..\\..\\lib\\runtimes\\osx\\native\\*.dylib\" target=\"runtimes\\osx\\native\" />
 	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />
-	<file src=\"Emgu.TF.runtime.macos.targets\" target=\"build\\${EMGUTF_MACOS_NUGET_ID}.targets\" />")
+	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
+	#<file src=\"Emgu.TF.runtime.macos.targets\" target=\"build\\${EMGUTF_MACOS_NUGET_ID}.targets\" />")
   SET(EMGUTF_MACOS_NUGET_DEPENDENCY "${EMGUTF_MACOS_NUGET_DEPENDENCY}
     <dependencies>
-		<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
+		<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"${CPACK_PACKAGE_DEPENDENCY_VERSION}\" />
     </dependencies>") 
 ENDIF()
 
-IF(HAVE_LINUX_X86_64)
-  SET(EMGUTF_UBUNTU_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.runtime.ubuntu")
-  IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
-    SET(EMGUTF_UBUNTU_NUGET_ID "${EMGUTF_UBUNTU_NUGET_ID}-CR")  
-  ENDIF()
+IF(HAVE_UBUNTU_X86_64 OR HAVE_UBUNTU_ARM64)
+  SET(EMGUTF_UBUNTU_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.runtime.${NUGET_NATIVE_PLATFORM_ID_UBUNTU}")
+  #IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
+  #  SET(EMGUTF_UBUNTU_NUGET_ID "${EMGUTF_UBUNTU_NUGET_ID}-CR")  
+  #ENDIF()
   SET(EMGUTF_UBUNTU_NUGET_TITLE "Native runtime of ${EMGUTF_NUGET_TITLE} for Ubuntu")
-  SET(EMGUTF_UBUNTU_NUGET_FILE_LIST " 
-    <file src=\"..\\..\\..\\lib\\x64\\*.so\" target=\"build\\x64\" />
-    <file src=\"..\\..\\..\\lib\\x64\\*.so.1\" target=\"build\\x64\" />
+  SET(EMGUTF_UBUNTU_NUGET_FILE_LIST "")
+  IF (HAVE_UBUNTU_X86_64)
+   SET(EMGUTF_UBUNTU_NUGET_FILE_LIST "${EMGUTF_UBUNTU_NUGET_FILE_LIST}
+    <file src=\"..\\..\\..\\lib\\runtimes\\ubuntu-x64\\native\\*.so\" target=\"runtimes\\ubuntu-x64\\native\" />
+    <file src=\"..\\..\\..\\lib\\runtimes\\ubuntu-x64\\native\\*.so.${TENSORFLOW_VERSION_MAJOR}\" target=\"runtimes\\ubuntu-x64\\native\" />")
+  ENDIF()
+  IF (HAVE_UBUNTU_ARM64)
+   SET(EMGUTF_UBUNTU_NUGET_FILE_LIST "${EMGUTF_UBUNTU_NUGET_FILE_LIST} 
+    <file src=\"..\\..\\..\\lib\\runtimes\\ubuntu-arm64\\native\\*.so\" target=\"runtimes\\ubuntu-arm64\\native\" />
+    <file src=\"..\\..\\..\\lib\\runtimes\\ubuntu-arm64\\native\\*.so.${TENSORFLOW_VERSION_MAJOR}\" target=\"runtimes\\ubuntu-arm64\\native\" />")
+  ENDIF()
+  SET(EMGUTF_UBUNTU_NUGET_FILE_LIST "${EMGUTF_UBUNTU_NUGET_FILE_LIST} 
 	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
 	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />
-	<file src=\"Emgu.TF.runtime.ubuntu.targets\" target=\"build\\${EMGUTF_UBUNTU_NUGET_ID}.targets\" />")
+	<file src=\"README.md\" target=\"\" />")
+	#<file src=\"Emgu.TF.runtime.ubuntu.targets\" target=\"build\\${EMGUTF_UBUNTU_NUGET_ID}.targets\" />")
   SET(EMGUTF_UBUNTU_NUGET_DEPENDENCY "${EMGUTF_UBUNTU_NUGET_DEPENDENCY}
     <dependencies>
-		<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
+		<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"${CPACK_PACKAGE_DEPENDENCY_VERSION}\" />
     </dependencies>")   
 ENDIF()
 
-IF(HAVE_LINUX_ARM)
-  SET(EMGUTF_RASPBIAN_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.runtime.raspbian")
-  IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
-    SET(EMGUTF_RASPBIAN_NUGET_ID "${EMGUTF_RASPBIAN_NUGET_ID}-CR")  
-  ENDIF()
-  SET(EMGUTF_RASPBIAN_NUGET_TITLE "Native runtime of ${EMGUTF_NUGET_TITLE} for Raspian")		
-  SET(EMGUTF_RASPBIAN_NUGET_FILE_LIST " 
-    <file src=\"..\\..\\..\\lib\\arm\\*.so\" target=\"build\\arm\" />
-	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />
-	<file src=\"Emgu.TF.runtime.raspbian.targets\" target=\"build\\${EMGUTF_RASPBIAN_NUGET_ID}.targets\" />")
-  SET(EMGUTF_RASPBIAN_NUGET_DEPENDENCY "${EMGUTF_RASPBIAN_NUGET_DEPENDENCY}
+IF (HAVE_LINUX_ARM OR HAVE_LINUX_ARM64)
+  SET(EMGUTF_DEBIAN_NUGET_DEPENDENCY "${EMGUTF_DEBIAN_NUGET_DEPENDENCY}
     <dependencies>
-		<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
+		<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"${CPACK_PACKAGE_DEPENDENCY_VERSION}\" />
     </dependencies>")
-ENDIF()
-
-IF(HAVE_LITE_BUILD)
-  SET(EMGUTF_LITE_NUGET_ID "Emgu.TF.Lite")
-  SET(EMGUTF_LITE_MODEL_NUGET_ID "${EMGUTF_LITE_NUGET_ID}.Models")
   
-  
-  SET(EMGUTF_LITE_WINDOWS_NUGET_ID "${EMGUTF_LITE_NUGET_ID}.runtime.windows")  
-  IF (HAVE_WINDESKTOP_X64_LITE_XNN)
-    SET(EMGUTF_LITE_WINDOWS_NUGET_ID "${EMGUTF_LITE_WINDOWS_NUGET_ID}.xnn")  
-  ENDIF()
-  IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
-    SET(EMGUTF_LITE_WINDOWS_NUGET_ID "${EMGUTF_LITE_WINDOWS_NUGET_ID}-CR")  
-  ENDIF()
-  SET(EMGUTF_LITE_WINDOWS_NUGET_TITLE "Native runtime of ${EMGUTF_LITE_NUGET_TITLE} for Windows")	
-  
-  SET(EMGUTF_LITE_MACOS_NUGET_ID "${EMGUTF_LITE_NUGET_ID}.runtime.mac")
-  IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
-    SET(EMGUTF_LITE_MACOS_NUGET_ID "${EMGUTF_LITE_MACOS_NUGET_ID}-CR")  
-  ENDIF()
-  SET(EMGUTF_LITE_MACOS_NUGET_TITLE "Native runtime of ${EMGUTF_LITE_NUGET_TITLE} for MacOS")	
-  
-  SET(EMGUTF_LITE_UBUNTU_NUGET_ID "${EMGUTF_LITE_NUGET_ID}.runtime.ubuntu") 
-  IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
-    SET(EMGUTF_LITE_UBUNTU_NUGET_ID "${EMGUTF_LITE_UBUNTU_NUGET_ID}-CR")  
-  ENDIF()  
-  SET(EMGUTF_LITE_UBUNTU_NUGET_TITLE "Native runtime of ${EMGUTF_LITE_NUGET_TITLE} for Ubuntu")	
-  
-  SET(EMGUTF_LITE_RASPBIAN_NUGET_ID "${EMGUTF_LITE_NUGET_ID}.runtime.raspbian")
-  IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
-    SET(EMGUTF_LITE_RASPBIAN_NUGET_ID "${EMGUTF_LITE_RASPBIAN_NUGET_ID}-CR")  
-  ENDIF()
-  SET(EMGUTF_LITE_RASPBIAN_NUGET_TITLE "Native runtime of ${EMGUTF_LITE_NUGET_TITLE} for Raspian")	
-
-  SET(EMGUTF_LITE_ANDROID_NUGET_ID "${EMGUTF_LITE_NUGET_ID}.runtime.android")  
-  IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
-    SET(EMGUTF_LITE_ANDROID_NUGET_ID "${EMGUTF_LITE_ANDROID_NUGET_ID}-CR")  
-  ENDIF()
-  SET(EMGUTF_LITE_ANDROID_NUGET_TITLE "Native runtime of ${EMGUTF_LITE_NUGET_TITLE} for Android")	
-  
-  SET(EMGUTF_LITE_IOS_NUGET_ID "${EMGUTF_LITE_NUGET_ID}.runtime.ios")  
-  IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
-    SET(EMGUTF_LITE_IOS_NUGET_ID "${EMGUTF_LITE_IOS_NUGET_ID}-CR")  
-  ENDIF()
-  SET(EMGUTF_LITE_IOS_NUGET_TITLE "Native runtime of ${EMGUTF_LITE_NUGET_TITLE} for iOS")	
-
-  SET(EMGUTF_LITE_NUGET_TITLE "Emgu TF Lite")
-  SET(EMGUTF_LITE_MODEL_NUGET_TITLE "Emgu TF Lite Models")
-  #MESSAGE(STATUS ">>> HAVE_WINDESKTOP_LITE: ${HAVE_WINDESKTOP_LITE}")
-  
-  IF ("${LICENSE_TYPE}" STREQUAL "Commercial")
-    #MESSAGE(STATUS ">>> TF Lite Commercial license")
-    SET(EMGUTF_LITE_NUGET_ID "${EMGUTF_LITE_NUGET_ID}-CR")
-    SET(EMGUTF_LITE_MODEL_NUGET_ID "${EMGUTF_LITE_MODEL_NUGET_ID}-CR")
-    
-    SET(EMGUTF_LITE_NUGET_TITLE "${EMGUTF_LITE_NUGET_TITLE} Commercial Release")
-    SET(EMGUTF_LITE_MODEL_NUGET_TITLE "${EMGUTF_LITE_MODEL_NUGET_TITLE} Commercial Release")
-  ENDIF()  
-  
-  SET(EMGUTF_LITE_NUGET_FILE_LIST "${EMGUTF_LITE_NUGET_FILE_LIST} 
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Lite.Netstandard.dll\" target=\"lib\\netstandard2.0\" />
-	<file src=\"..\\..\\..\\lib\\Emgu.TF.Lite.Netstandard.xml\" target=\"lib\\netstandard2.0\" />")
-  SET(EMGUTF_LITE_NUGET_FILE_LIST "${EMGUTF_LITE_NUGET_FILE_LIST}
+  IF(HAVE_LINUX_ARM)
+    SET(EMGUTF_DEBIAN_ARM_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.runtime.debian-arm")
+    SET(EMGUTF_DEBIAN_ARM_NUGET_TITLE "Native ARM runtime of Emgu TF for Debian (including Raspberry Pi OS)")		
+    SET(EMGUTF_DEBIAN_ARM_NUGET_FILE_LIST " 
+    <file src=\"..\\..\\..\\lib\\runtimes\\linux-arm\\native\\*.so\" target=\"runtimes\\${NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM}\\native\" />
 	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
 	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
-
-  SET(EMGUTF_LITE_NUGET_DEPENDENCY "${EMGUTF_LITE_NUGET_DEPENDENCY}
-    <group targetFramework=\".NETStandard2.0\">
-        <dependency id=\"System.Runtime.InteropServices.RuntimeInformation\" version=\"4.3.0\" />
-    </group>")
-  SET(EMGUTF_LITE_NUGET_DEPENDENCY "
-    <dependencies>
-		${EMGUTF_LITE_NUGET_DEPENDENCY}
-    </dependencies>")
+  ENDIF()
   
-  SET(EMGUTF_LITE_MODEL_NUGET_FILE_LIST "${EMGUTF_LITE_MODEL_NUGET_FILE_LIST} 
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Lite.Models.Netstandard.dll\" target=\"lib\\netstandard2.0\" />
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Lite.Models.Netstandard.xml\" target=\"lib\\netstandard2.0\" />
+  IF(HAVE_LINUX_ARM64)
+    SET(EMGUTF_DEBIAN_ARM64_NUGET_ID "${EMGUTF_NUGET_BASE_ID}.runtime.debian-arm64")
+    SET(EMGUTF_DEBIAN_ARM64_NUGET_TITLE "Native ARM64 runtime of Emgu TF for Debian (including Raspberry Pi OS)")		
+    SET(EMGUTF_DEBIAN_ARM64_NUGET_FILE_LIST " 
+    <file src=\"..\\..\\..\\lib\\runtimes\\linux-arm64\\native\\*.so\" target=\"runtimes\\${NUGET_NATIVE_PLATFORM_ID_DEBIAN_ARM64}\\native\" />
+	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
+	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
+  ENDIF()
+	
+ENDIF()
+
+SET(EMGUTF_MAUI_DOTNET_VERSION "net${DOTNET_VERSION_MAJOR}.0")
+if ("${DOTNET_VERSION_MAJOR}" STREQUAL "10")
+	SET(MAUI_VERSION_MSBUILD "<MauiVersion>10.0.11</MauiVersion>")
+    #message(STATUS "Using .NET 10")
+endif()
+
+SET(EMGUTF_MAUI_ANDROID_SRC_FOLDER "${EMGUTF_MAUI_DOTNET_VERSION}-android")
+SET(EMGUTF_MAUI_IOS_SRC_FOLDER "${EMGUTF_MAUI_DOTNET_VERSION}-ios")
+#SET(EMGUTF_MAUI_MACOS_SRC_FOLDER "${EMGUTF_MAUI_DOTNET_VERSION}-maccatalyst")
+SET(EMGUTF_MAUI_WINDOWS_SRC_FOLDER "${EMGUTF_MAUI_DOTNET_VERSION}-windows10.0.19041.0")
+
+SET(EMGUTF_MAUI_ANDROID_DST_FOLDER "${EMGUTF_MAUI_DOTNET_VERSION}-android34.0")
+SET(EMGUTF_MAUI_IOS_DST_FOLDER "${EMGUTF_MAUI_DOTNET_VERSION}-ios17.2")
+#SET(EMGUTF_MAUI_MACOS_DST_FOLDER "${EMGUCV_MAUI_DOTNET_VERSION}-maccatalyst16.1")
+SET(EMGUTF_MAUI_WINDOWS_DST_FOLDER "${EMGUTF_MAUI_DOTNET_VERSION}-windows10.0.19041.0")
+
+
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Maui.Demo.Directory.Build.props.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Example/Maui/Directory.Build.props)
+
+SET(HAVE_MAUI OFF)
+IF(HAVE_ANDROID AND HAVE_WINDESKTOP)
+  SET (HAVE_MAUI ON)
+ENDIF()
+MESSAGE(STATUS "HAVE_MAUI: ${HAVE_MAUI}")
+
+
+#IF(HAVE_MAUI)
+  SET(EMGUTF_MAUI_NUGET_ID "${EMGUTF_NUGET_ID}.runtime.maui${EMGUTF_RUNTIME_EXTRA_TAG}")
+  SET(EMGUTF_MAUI_NUGET_TITLE "Emgu TF for MAUI Native Runtime")
+  
+  #SET(EMGUTF_MAUI_NUGET_FILE_LIST "	
+  # <file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
+  #	
+  #	<file src=\"..\\..\\..\\lib\\Build\\Emgu.TF.runtime.maui\\AnyCPU\\Release\\${EMGUTF_MAUI_ANDROID_SRC_FOLDER}\\Emgu.TF.runtime.maui.dll\" target=\"lib\\${EMGUTF_MAUI_ANDROID_DST_FOLDER}\" />
+  # <file src=\"..\\..\\..\\lib\\Build\\Emgu.TF.runtime.maui\\AnyCPU\\Release\\${EMGUTF_MAUI_ANDROID_SRC_FOLDER}\\Emgu.TF.runtime.maui.xml\" target=\"lib\\${EMGUTF_MAUI_ANDROID_DST_FOLDER}\" />
+	
+  # <file src=\"..\\..\\..\\lib\\Build\\Emgu.TF.runtime.maui\\AnyCPU\\Release\\${EMGUTF_MAUI_WINDOWS_SRC_FOLDER}\\Emgu.TF.runtime.maui.dll\" target=\"lib\\${EMGUTF_MAUI_WINDOWS_DST_FOLDER}\" />
+  # <file src=\"..\\..\\..\\lib\\Build\\Emgu.TF.runtime.maui\\AnyCPU\\Release\\${EMGUTF_MAUI_WINDOWS_SRC_FOLDER}\\Emgu.TF.runtime.maui.xml\" target=\"lib\\${EMGUTF_MAUI_WINDOWS_DST_FOLDER}\" />
+	
+  # <file src=\"README.md\" target=\"docs\\\" />
+  # <file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
+IF (HAVE_WINDESKTOP)  
+  SET(EMGUTF_MAUI_PACKAGE_REFERENCE "
+	<ItemGroup>
+      <PackageReference Condition=\"$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'\" Include=\"${EMGUTF_WINDOWS_NUGET_ID}\" Version=\"${CPACK_PACKAGE_VERSION}\">
+	  </PackageReference>
+    </ItemGroup>")
+ENDIF()
+  #SET(EMGUTF_MAUI_NUGET_DEPENDENCY "
+  #    <dependencies>
+  #    <group targetFramework=\"${EMGUTF_MAUI_ANDROID_DST_FOLDER}\">
+#	    <dependency id=\"${EMGUTF_MAUI_ANDROID_NUGET_ID}\" version=\"${CPACK_PACKAGE_DEPENDENCY_VERSION}\" exclude=\"Build,Analyzers\" />
+#	    <dependency id=\"${EMGUTF_MODELS_NUGET_ID}\" version=\"${CPACK_PACKAGE_DEPENDENCY_VERSION}\" exclude=\"Build,Analyzers\" />
+#      </group>
+#      <group targetFramework=\"${EMGUTF_MAUI_WINDOWS_DST_FOLDER}\">
+#	    <dependency id=\"${EMGUTF_WINDOWS_NUGET_ID}\" version=\"${CPACK_PACKAGE_DEPENDENCY_VERSION}\" exclude=\"Build,Analyzers\" />
+#	    <dependency id=\"${EMGUTF_MODELS_NUGET_ID}\" version=\"${CPACK_PACKAGE_DEPENDENCY_VERSION}\" exclude=\"Build,Analyzers\" />
+#      </group>
+#    </dependencies>")
+  
+  
+  CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.maui.Directory.Build.props.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Runtime/Maui/UI/Full/Directory.Build.props)
+  IF(EMGU_SIGN_FOUND AND WIN32)
+    CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/SignBinary.Targets.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Runtime/Maui/UI/Full/SignBinary.Targets)
+  ENDIF()
+  IF(EMGU_NUGET_SIGN_FOUND AND WIN32)
+    CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/SignPkg.Targets.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Runtime/Maui/UI/Full/SignPkg.Targets)
+  ENDIF()
+  CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.maui.Package.README.md.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Runtime/Maui/UI/Full/docs/README.md)
+  #CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.maui.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.runtime.maui/Package.nuspec)
+#ENDIF()
+
+
+IF (HAVE_WINDESKTOP)
+      SET(EMGU_WINDOWS_MSVCRT_X64_NUGET_TITLE "MSVC x64 runtime for windows")
+	  SET(EMGU_WINDOWS_MSVCRT_X64_NUGET_FILE_LIST "${EMGU_WINDOWS_MSVCRT_X64_NUGET_FILE_LIST}
+	<file src=\"..\\..\\..\\lib\\runtimes\\win-x64\\native\\concrt*.dll\" target=\"runtimes\\win-x64\\native\" />
+	<file src=\"..\\..\\..\\lib\\runtimes\\win-x64\\native\\msvcp*.dll\" target=\"runtimes\\win-x64\\native\" />
+	<file src=\"..\\..\\..\\lib\\runtimes\\win-x64\\native\\vcruntime*.dll\" target=\"runtimes\\win-x64\\native\" />
+	<file src=\"..\\..\\..\\lib\\runtimes\\win-x64\\native\\vccorlib*.dll\" target=\"runtimes\\win-x64\\native\" />
 	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
     <file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
-
-  SET(EMGUTF_LITE_MODEL_NUGET_DEPENDENCY "${EMGUTF_LITE_MODEL_NUGET_DEPENDENCY}
-    <group targetFramework=\".NETStandard2.0\">
-        <dependency id=\"${EMGUTF_LITE_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
-        <dependency id=\"System.Drawing.Common\" version=\"4.7.0\" exclude=\"Build,Analyzers\"/>
-    </group>")
-  SET(EMGUTF_LITE_MODEL_NUGET_DEPENDENCY "
-    <dependencies>
-		${EMGUTF_LITE_MODEL_NUGET_DEPENDENCY}
-    </dependencies>")
-ENDIF()
-
-IF( HAVE_WINDESKTOP_LITE )
-  SET(EMGUTF_LITE_WINDOWS_NUGET_FILE_LIST "${EMGUTF_LITE_WINDOWS_NUGET_FILE_LIST} 
-    <file src=\"..\\..\\..\\lib\\x64\\*.dll\" target=\"build\\x64\" />
-	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />
-	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-	<file src=\"Emgu.TF.Lite.runtime.windows.targets\" target=\"build\\${EMGUTF_LITE_WINDOWS_NUGET_ID}.targets\" />")
-  SET(EMGUTF_LITE_WINDOWS_NUGET_DEPENDENCY "${EMGUTF_LITE_WINDOWS_NUGET_DEPENDENCY}
-    <dependencies>
-		<dependency id=\"${EMGUTF_LITE_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
-    </dependencies>")
-ENDIF()
-
-IF( HAVE_OSX_LITE ) 
-  SET(EMGUTF_LITE_MODEL_NUGET_FILE_LIST "${EMGUTF_LITE_MODEL_NUGET_FILE_LIST}
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Lite.Models.Mac.dll\" target=\"lib\\xamarinmac20\" />
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Lite.Models.Mac.xml\" target=\"lib\\xamarinmac20\" />")
-  SET(EMGUTF_LITE_MACOS_NUGET_FILE_LIST "${EMGUTF_LITE_MACOS_NUGET_FILE_LIST} 
-    <file src=\"..\\..\\..\\lib\\osx\\*.dylib\" target=\"build\" />
-	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />
-	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-	<file src=\"Emgu.TF.Lite.runtime.macos.targets\" target=\"build\\${EMGUTF_LITE_MACOS_NUGET_ID}.targets\" />")
-  SET(EMGUTF_LITE_MACOS_NUGET_DEPENDENCY "${EMGUTF_LITE_MACOS_NUGET_DEPENDENCY}
-    <dependencies>
-		<dependency id=\"${EMGUTF_LITE_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
-    </dependencies>")	
-ENDIF()
-IF (HAVE_IOS_LITE)
-  SET(EMGUTF_LITE_IOS_NUGET_FILE_LIST "${EMGUTF_LITE_IOS_NUGET_FILE_LIST}
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Lite.Runtime.iOS.dll\" target=\"lib\\Xamarin.iOS10\" />
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Lite.Runtime.iOS.xml\" target=\"lib\\Xamarin.iOS10\" />
-	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
-ENDIF()
-IF(HAVE_ANDROID_LITE)
-  SET(EMGUTF_LITE_MODEL_NUGET_FILE_LIST "${EMGUTF_LITE_MODEL_NUGET_FILE_LIST}
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Lite.Models.Android.dll\" target=\"lib\\MonoAndroid90\" />
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Lite.Models.Android.xml\" target=\"lib\\MonoAndroid90\" />")
-  SET(EMGUTF_LITE_ANDROID_NUGET_FILE_LIST "${EMGUTF_LITE_ANDROID_NUGET_FILE_LIST}
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Lite.Runtime.Android.dll\" target=\"lib\\MonoAndroid90\" />
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Lite.Runtime.Android.xml\" target=\"lib\\MonoAndroid90\" />
-	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
-  SET(EMGUTF_LITE_ANDROID_NUGET_DEPENDENCY "${EMGUTF_LITE_ANDROID_NUGET_DEPENDENCY}
-    <dependencies>
-		<dependency id=\"${EMGUTF_LITE_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
-    </dependencies>")
-ENDIF()
-IF (HAVE_LINUX_X86_64_LITE)
-  SET(EMGUTF_LITE_UBUNTU_NUGET_FILE_LIST "${EMGUTF_LITE_UBUNTU_NUGET_FILE_LIST} 
-    <file src=\"..\\..\\..\\lib\\x64\\*.so\" target=\"build\\x64\" />
-	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />
-	<file src=\"Emgu.TF.Lite.runtime.ubuntu.targets\" target=\"build\\${EMGUTF_LITE_UBUNTU_NUGET_ID}.targets\" />")
-  SET(EMGUTF_LITE_UBUNTU_NUGET_DEPENDENCY "${EMGUTF_LITE_UBUNTU_NUGET_DEPENDENCY}
-    <dependencies>
-		<dependency id=\"${EMGUTF_LITE_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
-    </dependencies>")	
-ENDIF()
-IF (HAVE_LINUX_ARM_LITE)
-  SET(EMGUTF_LITE_RASPBIAN_NUGET_FILE_LIST "${EMGUTF_LITE_RASPBIAN_NUGET_FILE_LIST} 
-    <file src=\"..\\..\\..\\lib\\arm\\*.so\" target=\"build\\arm\" />
-	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />
-	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-	<file src=\"Emgu.TF.Lite.runtime.raspbian.targets\" target=\"build\\${EMGUTF_LITE_RASPBIAN_NUGET_ID}.targets\" />")
-  SET(EMGUTF_LITE_RASPBIAN_NUGET_DEPENDENCY "${EMGUTF_LITE_RASPBIAN_NUGET_DEPENDENCY}
-    <dependencies>
-		<dependency id=\"${EMGUTF_LITE_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
-    </dependencies>")	
+	IF(MSVC)
+      SET(EMGU_WINDOWS_MSVCRT_VERSION ${CMAKE_CXX_COMPILER_VERSION})
+	  string(REPLACE "." ";" EMGU_WINDOWS_MSVCRT_VERSION_LIST ${EMGU_WINDOWS_MSVCRT_VERSION})
+	  list(GET EMGU_WINDOWS_MSVCRT_VERSION_LIST 0 EMGU_WINDOWS_MSVCRT_VERSION_MAJOR)
+	  list(GET EMGU_WINDOWS_MSVCRT_VERSION_LIST 1 EMGU_WINDOWS_MSVCRT_VERSION_MINOR)
+	  list(GET EMGU_WINDOWS_MSVCRT_VERSION_LIST 2 EMGU_WINDOWS_MSVCRT_VERSION_PATCH)
+	  list(GET EMGU_WINDOWS_MSVCRT_VERSION_LIST 3 EMGU_WINDOWS_MSVCRT_VERSION_BUILD)
+	  MESSAGE(STATUS "MSVCRT VERSION: ${EMGU_WINDOWS_MSVCRT_VERSION_MAJOR}.${EMGU_WINDOWS_MSVCRT_VERSION_MINOR}.${EMGU_WINDOWS_MSVCRT_VERSION_PATCH}.${EMGU_WINDOWS_MSVCRT_VERSION_BUILD}")
+      SET(EMGU_WINDOWS_MSVCRT_NUGET_VERSION ${EMGU_WINDOWS_MSVCRT_VERSION})
+	  IF ("${EMGU_WINDOWS_MSVCRT_VERSION_BUILD}" STREQUAL "0")
+	    SET(EMGU_WINDOWS_MSVCRT_NUGET_VERSION "${EMGU_WINDOWS_MSVCRT_VERSION_MAJOR}.${EMGU_WINDOWS_MSVCRT_VERSION_MINOR}.${EMGU_WINDOWS_MSVCRT_VERSION_PATCH}")
+	  ENDIF()
+	  MESSAGE(STATUS "MSVCRT NUGET VERSION: ${EMGU_WINDOWS_MSVCRT_NUGET_VERSION}")
+	  IF(HAVE_WINDESKTOP_X64)
+	    SET(EMGUTF_WINDOWS_NUGET_DEPENDENCY "${EMGUTF_WINDOWS_NUGET_DEPENDENCY}
+	  <dependency id=\"${EMGU_WINDOWS_MSVCRT_X64_NUGET_ID}\" version=\"${EMGU_WINDOWS_MSVCRT_VERSION}\" />
+	  ")
+	  ENDIF()
+    ENDIF()
 ENDIF()
 
 SET(EMGUTF_NUGET_DEPENDENCY "")
 SET(EMGUTF_PROTOBUF_NUGET_DEPENDENCY "")
 
-IF(HAVE_FULL_BUILD)
-  SET(EMGUTF_NUGET_FILE_LIST "${EMGUTF_NUGET_FILE_LIST} 
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Netstandard.dll\" target=\"lib\\netstandard2.0\" />
-	<file src=\"..\\..\\..\\lib\\Emgu.TF.Netstandard.xml\" target=\"lib\\netstandard2.0\" />
-	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-	<file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
-ENDIF()
+  #Sign Binary
+  SET(EMGUTF_POST_PROCESS_BINARY "")
+  IF(EMGU_SIGN_FOUND AND WIN32)
+    file(TO_NATIVE_PATH ${EMGU_SIGN_EXECUTABLE} EMGU_SIGN_EXECUTABLE_NATIVE_PATH)
+    file(TO_NATIVE_PATH ${SIGNTOOL_EXECUTABLE} SIGNTOOL_EXECUTABLE_NATIVE_PATH)
+	  SET(EMGUTF_POST_PROCESS_BINARY "${EMGUTF_POST_PROCESS_BINARY}
+	<Target Name=\"PostProcessBinary\" AfterTargets=\"PostBuildEvent\" Condition=\"Exists('${EMGU_SIGN_EXECUTABLE_NATIVE_PATH}')\">
+    <Message Text=\"Signing $(OutputPath)$(AssemblyName).dll\" Importance=\"high\" />
+	<MakeDir Directories=\"$(OutputPath)\\signed\"/>
+    <Exec Command='${EMGU_SIGN_EXECUTABLE_NATIVE_PATH} \"$(OutputPath)$(AssemblyName).dll\" \"$(OutputPath)signed\" \"${SIGNTOOL_EXECUTABLE_NATIVE_PATH}\"' WorkingDirectory=\"$(OutputPath)\" />
+	</Target>")
+	#  SET(EMGUTF_MODELS_POST_PROCESS_BINARY "<Target Name=\"PostProcessBinary\" AfterTargets=\"PostBuildEvent\">
+    #<Message Text=\"Signing $(OutputPath)$(AssemblyName).dll\" Importance=\"high\" />
+	#<MakeDir Directories=\"$(OutputPath)\\signed\"/>
+    #<Exec Command='${EMGU_SIGN_EXECUTABLE_NATIVE_PATH} \"$(OutputPath)$(AssemblyName).dll\" \"$(OutputPath)signed\" \"${SIGNTOOL_EXECUTABLE_NATIVE_PATH}\"' WorkingDirectory=\"$(OutputPath)\" />
+	#</Target>")
+	#  SET(EMGUTF_PROTOBUF_POST_PROCESS_BINARY "<Target Name=\"PostProcessBinary\" AfterTargets=\"PostBuildEvent\">
+    #<Message Text=\"Signing $(OutputPath)$(AssemblyName).dll\" Importance=\"high\" />
+	#<MakeDir Directories=\"$(OutputPath)\\signed\"/>
+    #<Exec Command='${EMGU_SIGN_EXECUTABLE_NATIVE_PATH} \"$(OutputPath)$(AssemblyName).dll\" \"$(OutputPath)signed\" \"${SIGNTOOL_EXECUTABLE_NATIVE_PATH}\"' WorkingDirectory=\"$(OutputPath)\" />
+	#</Target>")
+  ENDIF()
+
 
 IF(HAVE_WINDESKTOP)
   #MESSAGE(STATUS "HAVE_WINDESKTOP: ${HAVE_WINDESKTOP}")
   SET(BAZEL_CUDA_TOOLKIT_PATH_FILE "${CMAKE_CURRENT_SOURCE_DIR}/tensorflow/tensorflow/tools/CUDA_TOOLKIT_PATH.txt")
   
   SET(TFEXTERN_DEPENDENCY_DLLS)
-  
-  #IF(EXISTS ${BAZEL_GENERATED_CUFFT_VERSION_FILE})
-  #  SET(BAZEL_GENERATED_CUFFT_VERSION_FILE_FOUND ON)
-  #ENDIF()
-  #MESSAGE(STATUS ">>>>>>>>> BAZEL_GENERATED_CUFFT_VERSION_FILE ${BAZEL_GENERATED_CUFFT_VERSION_FILE_FOUND}: ${BAZEL_GENERATED_CUFFT_VERSION_FILE}")
-  
+
   IF(EXISTS ${BAZEL_CUDA_TOOLKIT_PATH_FILE})
     SET(CUDA_POSTFIX 64)
     SET(CMAKE_GENERATED_CUFFT_VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/tensorflow/tensorflow/contrib/cmake/emgu.tf.cufft.version.txt")	
@@ -827,7 +753,8 @@ IF(HAVE_WINDESKTOP)
 	  ENDIF()
       
 	  SET(EMGU_TF_CUDA_VERSION "${npp_major}.${npp_minor}.${npp_build}") 
-      SET(EMGU_TF_CUFFT_VERSION "${npp_major}.${npp_minor}.${npp_build}") 
+      SET(EMGU_TF_CUFFT_VERSION "${npp_major}.${npp_minor}.${npp_build}")
+      SET(EMGU_TF_CUSPARSE_VERSION "${npp_major}.${npp_minor}.${npp_build}")	  
       #SET(CUDA_TOOLKIT_ROOT_DIR "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v${npp_major}.${npp_minor}")
       SET(CUDA_TOOLKIT_ROOT_DIR "${BAZEL_CUDA_TOOLKIT_PATH}")
       
@@ -845,6 +772,7 @@ IF(HAVE_WINDESKTOP)
 	  FILE(GLOB CURAND_DEPENDENCY_DLLS "${CUDA_TOOLKIT_ROOT_DIR}/bin/curand*.dll")
 	  FILE(GLOB CUSOLVER_DEPENDENCY_DLLS "${CUDA_TOOLKIT_ROOT_DIR}/bin/cusolver*.dll")
 	  FILE(GLOB CUSPARSE_DEPENDENCY_DLLS "${CUDA_TOOLKIT_ROOT_DIR}/bin/cusparse*.dll")
+	  FILE(GLOB CUDNN_DEPENDENCY_DLLS "${CUDA_TOOLKIT_ROOT_DIR}/bin/cudnn*.dll" "${CUDA_TOOLKIT_ROOT_DIR}/bin/zlibwapi.dll")
       LIST(APPEND TFEXTERN_DEPENDENCY_DLLS 
 	    ${CUDART_FILES}
 	    ${CUFFT_DEPENDENCY_DLLS}
@@ -852,6 +780,7 @@ IF(HAVE_WINDESKTOP)
 	    ${CURAND_DEPENDENCY_DLLS}
 	    ${CUSOLVER_DEPENDENCY_DLLS}
 		${CUSPARSE_DEPENDENCY_DLLS}
+		${CUDNN_DEPENDENCY_DLLS}
 	  )
       SET(EMGU_TF_CUFFT_FILE_VERSION "${NPP_POSTFIX}")
 #    ELSE()
@@ -882,7 +811,9 @@ IF(HAVE_WINDESKTOP)
       string( REGEX MATCH "[0-9]+" dnn_patchlevel ${dnn_patchlevel} ) 	
       SET(EMGU_TF_DNN_VERSION "${dnn_major}.${dnn_minor}.${dnn_patchlevel}")
       #SET(CUDA_TOOLKIT_ROOT_DIR "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v${npp_major}.${npp_minor}")
-      LIST(APPEND TFEXTERN_DEPENDENCY_DLLS "${CUDA_TOOLKIT_ROOT_DIR}/bin/cudnn${CUDA_POSTFIX}_${dnn_major}.dll")
+      #LIST(APPEND TFEXTERN_DEPENDENCY_DLLS "${CUDA_TOOLKIT_ROOT_DIR}/bin/cudnn${CUDA_POSTFIX}_${dnn_major}.dll")
+	  FILE(GLOB TFEXTERN_CUDNN_DEPENDENCY_DLLS "${CUDA_TOOLKIT_ROOT_DIR}/bin/cudnn*.dll")
+	  LIST(APPEND TFEXTERN_DEPENDENCY_DLLS ${TFEXTERN_CUDNN_DEPENDENCY_DLLS})
     ENDIF()
     
     STRING(REPLACE "." ";" EMGU_TF_DNN_VERSION_LIST ${EMGU_TF_DNN_VERSION})
@@ -896,124 +827,219 @@ IF(HAVE_WINDESKTOP)
 	GET_FILENAME_COMPONENT(TFEXTERN_DEPENDENCT_DLL_NAME ${TFEXTERN_DEPENDENCY_DLL} NAME_WE)
 	file(COPY "${TFEXTERN_DEPENDENCY_DLL}" DESTINATION "${UNMANAGED_LIBRARY_OUTPUT_PATH}")
 	MESSAGE(STATUS "Copying ${TFEXTERN_DEPENDENCY_DLL} to ${UNMANAGED_LIBRARY_OUTPUT_PATH}")
-	file(COPY "${TFEXTERN_DEPENDENCY_DLL}" DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF${UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER}")
-	MESSAGE(STATUS "Copying ${TFEXTERN_DEPENDENCY_DLL} to ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF${UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER}")
+	#file(COPY "${TFEXTERN_DEPENDENCY_DLL}" DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF${UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER}")
+	#MESSAGE(STATUS "Copying ${TFEXTERN_DEPENDENCY_DLL} to ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF${UNMANAGED_LIBRARY_OUTPUT_SUBFOLDER}")
 	#LIST(APPEND TFEXTERN_DEPENDENCY_DLL_NAMES ${TFEXTERN_DEPENDENCT_DLL_NAME})
       ENDFOREACH()
     ENDIF()
     
-    SET(EMGU_TF_DNN_ID "Emgu.TF.runtime.windows.cuda.dnn")
-    SET(EMGU_TF_CUFFT_ID "Emgu.TF.runtime.windows.cuda.cufft")
-	SET(EMGU_TF_CUDART_ID "Emgu.TF.runtime.windows.cuda.rt")
+    SET(EMGU_TF_DNN_ID "Emgu.runtime.windows.cuda.dnn")
+	SET(EMGU_TF_DNN_ADV_ID "Emgu.runtime.windows.cuda.dnn.adv")
+	SET(EMGU_TF_DNN_CNN_INFER_ID "Emgu.runtime.windows.cuda.dnn.cnn.infer")
+	SET(EMGU_TF_DNN_CNN_TRAIN_ID "Emgu.runtime.windows.cuda.dnn.cnn.train")
+	SET(EMGU_TF_DNN_OPS_ID "Emgu.runtime.windows.cuda.dnn.ops")
+    SET(EMGU_TF_CUFFT_ID "Emgu.runtime.windows.cuda.fft")
+	SET(EMGU_TF_CUBLAS_ID "Emgu.runtime.windows.cuda.blas")
+	SET(EMGU_TF_CUBLAS_LT_ID "Emgu.runtime.windows.cuda.blas.lt")
+	SET(EMGU_TF_CUDART_ID "Emgu.runtime.windows.cuda.rt")
+	SET(EMGU_TF_CUSOLVER_ID "Emgu.runtime.windows.cuda.solver")
+	SET(EMGU_TF_CUSOLVER_MG_ID "Emgu.runtime.windows.cuda.solver.mg")
+	SET(EMGU_TF_CUSPARSE_ID "Emgu.runtime.windows.cuda.sparse")
 
-	SET(EMGUTF_CUDART_NUGET_DEPENDENCY "${EMGUTF_CUDART_NUGET_DEPENDENCY}
+#	SET(EMGUTF_CUDART_NUGET_DEPENDENCY "${EMGUTF_CUDART_NUGET_DEPENDENCY}
+#        <dependencies>
+#        </dependencies>")
+	SET(EMGU_TF_CUBLAS_DEPENDENCY "${EMGU_TF_CUBLAS_DEPENDENCY}
+        <dependencies>
+			<dependency id=\"${EMGU_TF_CUDART_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />
+        </dependencies>")
+	SET(EMGU_TF_CUBLAS_LT_DEPENDENCY "${EMGU_TF_CUBLAS_LT_DEPENDENCY}
+        <dependencies>
+			<dependency id=\"${EMGU_TF_CUBLAS_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />
+        </dependencies>")
+	SET(EMGU_TF_CUFFT_DEPENDENCY "${EMGU_TF_CUFFT_DEPENDENCY}
+        <dependencies>
+			<dependency id=\"${EMGU_TF_CUDART_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />
+        </dependencies>")
+	SET(EMGU_TF_CUSPARSE_DEPENDENCY "${EMGU_TF_CUSPARSE_DEPENDENCY}
+        <dependencies>
+			<dependency id=\"${EMGU_TF_CUDART_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />
+        </dependencies>")
+    SET(EMGU_TF_CUSOLVER_MG_DEPENDENCY "${EMGU_TF_CUSOLVER_MG_DEPENDENCY}
+        <dependencies>
+			<dependency id=\"${EMGU_TF_CUDART_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />
+        </dependencies>")
+	SET(EMGU_TF_CUSOLVER_DEPENDENCY "${EMGU_TF_CUSOLVER_DEPENDENCY}
+        <dependencies>
+			<dependency id=\"${EMGU_TF_CUDART_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />
+        </dependencies>")
+	SET(EMGU_TF_DNN_DEPENDENCY "${EMGU_TF_DNN_DEPENDENCY}
+        <dependencies>
+			<dependency id=\"${EMGU_TF_CUDART_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />
+			<dependency id=\"${EMGU_ZLIBWAPI_ID}\" version=\"[${EMGU_ZLIBWAPI_VERSION}]\" />
+        </dependencies>")
+	SET(EMGU_TF_DNN_OPS_DEPENDENCY "${EMGU_TF_DNN_OPS_DEPENDENCY}
         <dependencies>
 			<dependency id=\"${EMGU_TF_DNN_ID}\" version=\"[${EMGU_TF_DNN_VERSION}]\" />
-			<dependency id=\"${EMGU_TF_CUFFT_ID}\" version=\"[${EMGU_TF_CUFFT_VERSION}]\" />
         </dependencies>")
-    
+	SET(EMGU_TF_DNN_ADV_DEPENDENCY "${EMGU_TF_DNN_ADV_DEPENDENCY}
+        <dependencies>
+			<dependency id=\"${EMGU_TF_DNN_ID}\" version=\"[${EMGU_TF_DNN_VERSION}]\" />
+        </dependencies>")
+	SET(EMGU_TF_DNN_CNN_TRAIN_DEPENDENCY "${EMGU_TF_DNN_CNN_TRAIN_DEPENDENCY}
+        <dependencies>
+			<dependency id=\"${EMGU_TF_DNN_ID}\" version=\"[${EMGU_TF_DNN_VERSION}]\" />
+        </dependencies>")
+	SET(EMGU_TF_DNN_CNN_INFER_DEPENDENCY "${EMGU_TF_DNN_CNN_INFER_DEPENDENCY}
+        <dependencies>
+			<dependency id=\"${EMGU_TF_DNN_ID}\" version=\"[${EMGU_TF_DNN_VERSION}]\" />
+        </dependencies>")
+	SET(EMGUTF_WINDOWS_NUGET_DEPENDENCY "${EMGUTF_WINDOWS_NUGET_DEPENDENCY}
+			<dependency id=\"${EMGU_TF_CUSOLVER_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />
+			<dependency id=\"${EMGU_TF_CUSOLVER_MG_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />
+			<dependency id=\"${EMGU_TF_DNN_ADV_ID}\" version=\"[${EMGU_TF_DNN_VERSION}]\" />
+			<dependency id=\"${EMGU_TF_DNN_OPS_ID}\" version=\"[${EMGU_TF_DNN_VERSION}]\" />
+			<dependency id=\"${EMGU_TF_DNN_CNN_TRAIN_ID}\" version=\"[${EMGU_TF_DNN_VERSION}]\" />
+			<dependency id=\"${EMGU_TF_DNN_CNN_INFER_ID}\" version=\"[${EMGU_TF_DNN_VERSION}]\" />
+			<dependency id=\"${EMGU_ZLIBWAPI_ID}\" version=\"[${EMGU_ZLIBWAPI_VERSION}]\" />
+			<dependency id=\"${EMGU_TF_CUFFT_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />
+			<dependency id=\"${EMGU_TF_CUSPARSE_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />
+			<dependency id=\"${EMGU_TF_CUBLAS_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />
+			<dependency id=\"${EMGU_TF_CUBLAS_LT_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />")
+
     CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_DNN_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_DNN_ID}/Package.nuspec)
-    CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_DNN_ID}.targets.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_DNN_ID}/${EMGU_TF_DNN_ID}.targets)
+    
+	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_DNN_ADV_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_DNN_ADV_ID}/Package.nuspec)
+    
+	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_DNN_CNN_TRAIN_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_DNN_CNN_TRAIN_ID}/Package.nuspec)
+	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_DNN_CNN_INFER_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_DNN_CNN_INFER_ID}/Package.nuspec)
+	
+	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_ZLIBWAPI_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_ZLIBWAPI_ID}/Package.nuspec)
+    
+	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_DNN_OPS_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_DNN_OPS_ID}/Package.nuspec)
+    
     CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_CUFFT_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_CUFFT_ID}/Package.nuspec)
-    CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_CUFFT_ID}.targets.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_CUFFT_ID}/${EMGU_TF_CUFFT_ID}.targets)
+	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_CUSPARSE_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_CUSPARSE_ID}/Package.nuspec)
+    
+	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_CUBLAS_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_CUBLAS_ID}/Package.nuspec)
+	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_CUBLAS_LT_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_CUBLAS_LT_ID}/Package.nuspec)
+    
+	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_CUSOLVER_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_CUSOLVER_ID}/Package.nuspec)
+    
+    CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_CUSOLVER_MG_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_CUSOLVER_MG_ID}/Package.nuspec)
+    
 	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_CUDART_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_CUDART_ID}/Package.nuspec)
-	CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_TF_CUDART_ID}.targets.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_TF_CUDART_ID}/${EMGU_TF_CUDART_ID}.targets)
 	
-    SET(EMGUTF_WINDOWS_NUGET_DEPENDENCY "${EMGUTF_WINDOWS_NUGET_DEPENDENCY}
-			<dependency id=\"${EMGU_TF_CUDART_ID}\" version=\"[${EMGU_TF_CUDA_VERSION}]\" />")
-    SET(EMGUTF_WINDOWS_NUGET_FILE_LIST "${EMGUTF_WINDOWS_NUGET_FILE_LIST} 
-	<file src=\"..\\..\\..\\lib\\x64\\*.dll\" exclude=\"..\\..\\..\\lib\\x64\\cu*.dll;\" target=\"build\\x64\" />")
   ELSE()
-    SET(EMGUTF_WINDOWS_NUGET_FILE_LIST "${EMGUTF_WINDOWS_NUGET_FILE_LIST} 
-	<file src=\"..\\..\\..\\lib\\x64\\*.dll\" target=\"build\\x64\" />")
+    #SET(EMGUTF_WINDOWS_NUGET_FILE_LIST "${EMGUTF_WINDOWS_NUGET_FILE_LIST} 
+	#<file src=\"..\\..\\..\\lib\\x64\\*.dll\" target=\"build\\x64\" />")
   ENDIF()
-  
+  SET(EMGUTF_WINDOWS_NUGET_FILE_LIST "${EMGUTF_WINDOWS_NUGET_FILE_LIST} 
+	<file src=\"..\\..\\..\\lib\\runtimes\\win-x64\\native\\*.dll\" exclude=\"..\\..\\..\\lib\\runtimes\\win-x64\\native\\cu*.dll;..\\..\\..\\lib\\runtimes\\win-x64\\native\\concrt*.dll;..\\..\\..\\lib\\runtimes\\win-x64\\native\\msvcp*.dll;..\\..\\..\\lib\\runtimes\\win-x64\\native\\vcruntime*.dll;..\\..\\..\\lib\\runtimes\\win-x64\\native\\vccorlib*.dll;..\\..\\..\\lib\\runtimes\\win-x64\\native\\zlibwapi.dll\" target=\"runtimes\\win-x64\\native\" />")
 ENDIF()
 
-SET(EMGUTF_MODEL_NUGET_FILE_LIST "
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Models.Netstandard.dll\" target=\"lib\\netstandard2.0\" />
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Models.Netstandard.xml\" target=\"lib\\netstandard2.0\" />
-	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-    <file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
-	
-SET(EMGUTF_MODEL_NUGET_DEPENDENCY "${EMGUTF_MODEL_NUGET_DEPENDENCY}
-    <group targetFramework=\".NETStandard2.0\">
-		<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
-		<dependency id=\"System.Drawing.Common\" version=\"4.7.0\" exclude=\"Build,Analyzers\" />
-	</group>")
-
-
-	
-IF( HAVE_OSX ) 
-  SET(EMGUTF_MODEL_NUGET_FILE_LIST "${EMGUTF_MODEL_NUGET_FILE_LIST}
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Models.Mac.dll\" target=\"lib\\xamarinmac20\" />
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Models.Mac.xml\" target=\"lib\\xamarinmac20\" />")
-  SET(EMGUTF_MODEL_NUGET_DEPENDENCY "${EMGUTF_MODEL_NUGET_DEPENDENCY}
-    <group targetFramework=\"Xamarin.Mac2.0\">
-		<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
-	</group>")
+IF (HAVE_WINDESKTOP)
+    CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_WINDOWS_MSVCRT_X64_NUGET_ID}.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_WINDOWS_MSVCRT_X64_NUGET_ID}/Package.nuspec)
+    #CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/${EMGU_WINDOWS_MSVCRT_X64_NUGET_ID}.targets.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/${EMGU_WINDOWS_MSVCRT_X64_NUGET_ID}/${EMGU_WINDOWS_MSVCRT_X64_NUGET_ID}.targets)
 ENDIF()
 
-IF(HAVE_ANDROID)
-  SET(EMGUTF_MODEL_NUGET_FILE_LIST "${EMGUTF_MODEL_NUGET_FILE_LIST}
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Models.Android.dll\" target=\"lib\\MonoAndroid90\" />
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Models.Android.xml\" target=\"lib\\MonoAndroid90\" />")
-  SET(EMGUTF_MODEL_NUGET_DEPENDENCY "${EMGUTF_MODEL_NUGET_DEPENDENCY}
-    <group targetFramework=\"MonoAndroid1.0\">
-		<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
-	</group>")
-ENDIF()
-
-SET(EMGUTF_MODEL_NUGET_DEPENDENCY "
-    <dependencies>
-		${EMGUTF_MODEL_NUGET_DEPENDENCY}
-    </dependencies>")
+#SET(EMGUTF_MODEL_NUGET_FILE_LIST "
+#    <file src=\"..\\..\\..\\lib\\Emgu.TF.Models.dll\" target=\"lib\\netstandard2.0\" />
+#    <file src=\"..\\..\\..\\lib\\Emgu.TF.Models.xml\" target=\"lib\\netstandard2.0\" />
+#    <file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
+#    <file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
 	
+#SET(EMGUTF_MODEL_NUGET_DEPENDENCY "${EMGUTF_MODEL_NUGET_DEPENDENCY}
+#    <group targetFramework=\".NETStandard2.0\">
+#        <dependency id=\"${EMGUTF_NUGET_ID}\" version=\"${CPACK_PACKAGE_DEPENDENCY_VERSION}\" />
+#        <dependency id=\"System.Drawing.Common\" version=\"6.0.0\" exclude=\"Build,Analyzers\" />
+#    </group>")
 
+#CHECK_BINARY_EXIST("lib/android" "Emgu.TF.Models.dll" HAVE_EMGUTF_MODEL_ANDROID OFF)  
+#IF(TARGET Emgu.TF.Models.Android)
+#  SET(HAVE_EMGUTF_MODEL_ANDROID ON)
+#ENDIF()
 
-SET(EMGUTF_PROTOBUF_NUGET_FILE_LIST "
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Protobuf.Netstandard.dll\" target=\"lib\\netstandard2.0\" />
-    <file src=\"..\\..\\..\\lib\\Emgu.TF.Protobuf.Netstandard.xml\" target=\"lib\\netstandard2.0\" />
-	<file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
-    <file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
+#IF(HAVE_EMGUTF_MODEL_ANDROID)
+#  SET(EMGUTF_MODEL_NUGET_FILE_LIST "${EMGUTF_MODEL_NUGET_FILE_LIST}
+#    <file src=\"..\\..\\..\\lib\\android\\Emgu.TF.Models.dll\" target=\"lib\\MonoAndroid10\" />
+#    <file src=\"..\\..\\..\\lib\\android\\Emgu.TF.Models.xml\" target=\"lib\\MonoAndroid10\" />")
+#  SET(EMGUTF_MODEL_NUGET_DEPENDENCY "${EMGUTF_MODEL_NUGET_DEPENDENCY}
+#    <group targetFramework=\"MonoAndroid1.0\">
+#        <dependency id=\"${EMGUTF_NUGET_ID}\" version=\"${CPACK_PACKAGE_DEPENDENCY_VERSION}\" />
+#        <dependency id=\"Xamarin.Android.Support.v7.AppCompat\" version=\"28.0.0.3\" />
+#    </group>")
+#ENDIF()
 
-SET(EMGUTF_PROTOBUF_PROJECT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Protobuf/Emgu.TF.Protobuf.Netstandard/Emgu.TF.Protobuf.Netstandard.csproj")
+#SET(EMGUTF_MODEL_NUGET_DEPENDENCY "
+#    <dependencies>
+#		${EMGUTF_MODEL_NUGET_DEPENDENCY}
+#    </dependencies>")
+
+#SET(EMGUTF_PROTOBUF_NUGET_FILE_LIST "
+#    <file src=\"..\\..\\..\\lib\\Emgu.TF.Protobuf.Netstandard.dll\" target=\"lib\\netstandard2.0\" />
+#    <file src=\"..\\..\\..\\lib\\Emgu.TF.Protobuf.Netstandard.xml\" target=\"lib\\netstandard2.0\" />
+#    <file src=\"..\\..\\..\\miscellaneous\\nuget_icon.png\" target=\"icon.png\" />
+#    <file src=\"..\\..\\..\\${EMGUTF_LICENSE_FILE}\" target=\"\" />")
+
+SET(EMGUTF_PROTOBUF_PROJECT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Protobuf/NetStandard/Emgu.TF.Protobuf.csproj")
 file(STRINGS "${EMGUTF_PROTOBUF_PROJECT_FILE}" EMGUTF_PROTOBUF_PROJECT_PARTS REGEX "Google.Protobuf" )
 string(REGEX REPLACE ".+Version=\"([0-9]+.[0-9]+.[0-9]+)\".*" "\\1" PROTOBUF_VERSION "${EMGUTF_PROTOBUF_PROJECT_PARTS}")
 #MESSAGE(STATUS "EMGUTF_PROTOBUF_PROJECT_PARTS: ${EMGUTF_PROTOBUF_PROJECT_PARTS}" )	
 #MESSAGE(STATUS "PROTOBUF_VERSION: ${PROTOBUF_VERSION}" )	
 	
-SET(EMGUTF_PROTOBUF_NUGET_DEPENDENCY "${EMGUTF_PROTOBUF_NUGET_DEPENDENCY}
-    <dependencies>
-		<group targetFramework=\".NETStandard2.0\">
-			<dependency id=\"${EMGUTF_NUGET_ID}\" version=\"[${CPACK_PACKAGE_VERSION}${TENSORFLOW_VERSION_SUFFIX}]\" />
-			<dependency id=\"Google.Protobuf\" version=\"[${PROTOBUF_VERSION}]\" />
-		</group>
-    </dependencies>") 
+#SET(EMGUTF_PROTOBUF_NUGET_DEPENDENCY "${EMGUTF_PROTOBUF_NUGET_DEPENDENCY}
+#    <dependencies>
+#        <group targetFramework=\".NETStandard2.0\">
+#            <dependency id=\"${EMGUTF_NUGET_ID}\" version=\"${CPACK_PACKAGE_DEPENDENCY_VERSION}\" />
+#            <dependency id=\"Google.Protobuf\" version=\"${PROTOBUF_VERSION}\" />
+#        </group>
+#    </dependencies>") 
 
 SET(EMGUTF_WINDOWS_NUGET_DEPENDENCY "
-	<dependencies>
-		${EMGUTF_WINDOWS_NUGET_DEPENDENCY}
-	</dependencies>")
+    <dependencies>
+        ${EMGUTF_WINDOWS_NUGET_DEPENDENCY}
+    </dependencies>")
 
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF/Package.nuspec)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Models.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.Models/Package.nuspec)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Protobuf.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.Protobuf/Package.nuspec)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/XamarinForms.Android.AndroidManifest.xml.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Example/XamarinForms/XamarinForms.Android/Properties/AndroidManifest.xml @ONLY)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/XamarinForms.Lite.Android.AndroidManifest.xml.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Example/XamarinForms/XamarinForms.Lite.Android/Properties/AndroidManifest.xml @ONLY)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.android.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.runtime.android/Package.nuspec)
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Directory.Build.props.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF/NetStandard/Directory.Build.props)
+IF(EMGU_SIGN_FOUND AND WIN32)
+  CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/SignBinary.Targets.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF/NetStandard/SignBinary.Targets)
+ENDIF()
+IF(EMGU_NUGET_SIGN_FOUND AND WIN32)
+  CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/SignPkg.Targets.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF/NetStandard/SignPkg.Targets)
+ENDIF()
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Package.README.md.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF/NetStandard/docs/README.md)
+
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Models.Directory.Build.props.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Models/NetStandard/Directory.Build.props)
+IF(EMGU_SIGN_FOUND AND WIN32)
+  CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/SignBinary.Targets.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Models/NetStandard/SignBinary.Targets)
+ENDIF()
+IF(EMGU_NUGET_SIGN_FOUND AND WIN32)
+  CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/SignPkg.Targets.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Models/NetStandard/SignPkg.Targets)
+ENDIF()
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Models.Package.README.md.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Models/NetStandard/docs/README.md)
+
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.CodeGen.Directory.Build.props.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.CodeGen/Directory.Build.props)
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Protobuf.Directory.Build.props.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Protobuf/NetStandard/Directory.Build.props)
+IF(EMGU_SIGN_FOUND AND WIN32)
+  CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/SignBinary.Targets.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Protobuf/NetStandard/SignBinary.Targets)
+ENDIF()
+IF(EMGU_NUGET_SIGN_FOUND AND WIN32)
+  CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/SignPkg.Targets.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Protobuf/NetStandard/SignPkg.Targets)
+ENDIF()
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Protobuf.Package.README.md.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Protobuf/NetStandard/docs/README.md)
+
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Test.Net.Directory.Build.props.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Test/Emgu.TF.Test.Net/Directory.Build.props)
+
 CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.windows.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.runtime.windows/Package.nuspec)
 CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.macos.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.runtime.macos/Package.nuspec)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Lite.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.Lite/Package.nuspec)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Lite.Models.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.Lite.Models/Package.nuspec)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Lite.runtime.windows.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.Lite.runtime.windows/Package.nuspec)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Lite.runtime.macos.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.Lite.runtime.macos/Package.nuspec)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Lite.runtime.android.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.Lite.runtime.android/Package.nuspec)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Lite.runtime.ios.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.Lite.runtime.ios/Package.nuspec)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Lite.runtime.ubuntu.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.Lite.runtime.ubuntu/Package.nuspec)
+
 CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.ubuntu.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.runtime.ubuntu/Package.nuspec)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Lite.runtime.raspbian.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.Lite.runtime.raspbian/Package.nuspec)
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.raspbian.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.runtime.raspbian/Package.nuspec)
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.ubuntu.Package.README.md.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.runtime.ubuntu/README.md)
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.debian-arm.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.runtime.debian-arm/Package.nuspec)
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.runtime.debian-arm64.Package.nuspec.in ${CMAKE_CURRENT_SOURCE_DIR}/platforms/nuget/Emgu.TF.runtime.debian-arm64/Package.nuspec)
+
+CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Emgu.TF.Inception.Console.Directory.Build.props.in ${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.Example/Inception.Console/Directory.Build.props)
 
 # ----------------------------------------------------------------------------
 #  Generate readme file for Emgu TF project
@@ -1036,25 +1062,24 @@ ADD_SUBDIRECTORY(Emgu.TF.Util)
 IF(HAVE_FULL_BUILD)
   ADD_SUBDIRECTORY(Emgu.TF)
 ENDIF()
-IF(HAVE_LITE_BUILD)
-  ADD_SUBDIRECTORY(Emgu.TF.Lite)
-ENDIF()
-ADD_SUBDIRECTORY(Emgu.TF.Example)
-#ADD_SUBDIRECTORY(Emgu.TF.Test.Core)
-#ADD_SUBDIRECTORY(Emgu.TF.Test)
-ADD_SUBDIRECTORY(Emgu.TF.Runtime)
+
 ADD_SUBDIRECTORY(Emgu.Models)
+
 IF(HAVE_FULL_BUILD)
   ADD_SUBDIRECTORY(Emgu.TF.Protobuf)
   ADD_SUBDIRECTORY(Emgu.TF.Models)
   ADD_SUBDIRECTORY(Emgu.TF.CodeGen)
 ENDIF()
-IF(HAVE_LITE_BUILD)
-  ADD_SUBDIRECTORY(Emgu.TF.Lite.Models)
-ENDIF()
-IF (HAVE_FULL_BUILD OR HAVE_LITE_BUILD)
+
+
+IF (HAVE_FULL_BUILD)
   ADD_SUBDIRECTORY(platforms)
 ENDIF()
+
+#Add MAUI project
+ADD_SUBDIRECTORY(Emgu.TF.Runtime)
+
+ADD_SUBDIRECTORY(Emgu.TF.Example)
 
 INSTALL(
   FILES
@@ -1075,46 +1100,6 @@ IF(HAVE_ANDROID)
     PATTERN "bin" EXCLUDE
     )
 ENDIF()
-IF(HAVE_ANDROID_LITE)
-  INSTALL(
-    DIRECTORY
-    ${CMAKE_CURRENT_SOURCE_DIR}/Solution/Android
-    DESTINATION Solution
-    COMPONENT emgutf_source
-    FILES_MATCHING 
-    PATTERN "Emgu.TF.Lite.Android.sln"
-	PATTERN "Emgu.TF.Lite.Example.Android.sln"
-    PATTERN ".git" EXCLUDE
-    PATTERN "bin" EXCLUDE
-    )
-ENDIF()
-
-#IF(HAVE_IOS)
-#  INSTALL(
-#    DIRECTORY
-#    ${CMAKE_CURRENT_SOURCE_DIR}/Solution/iOS
-#    DESTINATION Solution
-#    COMPONENT emgutf_source
-#    FILES_MATCHING 
-#    PATTERN "Emgu.TF.Example.iOS.sln"
-#    PATTERN ".git" EXCLUDE
-#    PATTERN "bin" EXCLUDE
-#    )
-#ENDIF()
-
-IF(HAVE_IOS_LITE)
-  INSTALL(
-    DIRECTORY
-    ${CMAKE_CURRENT_SOURCE_DIR}/Solution/iOS
-    DESTINATION Solution
-    COMPONENT emgutf_source
-    FILES_MATCHING 
-    PATTERN "Emgu.TF.Lite.Example.iOS.sln"
-    PATTERN ".git" EXCLUDE
-    PATTERN "bin" EXCLUDE
-    )
-ENDIF()
-
 IF(HAVE_OSX)
   INSTALL(
     DIRECTORY
@@ -1123,19 +1108,6 @@ IF(HAVE_OSX)
     COMPONENT emgutf_source
     FILES_MATCHING 
     PATTERN "Emgu.TF.Mac.sln"
-    PATTERN ".git" EXCLUDE
-    PATTERN "bin" EXCLUDE
-    )
-ENDIF()
-
-IF(HAVE_OSX_LITE)
-  INSTALL(
-    DIRECTORY
-    ${CMAKE_CURRENT_SOURCE_DIR}/Solution/macos
-    DESTINATION Solution
-    COMPONENT emgutf_source
-    FILES_MATCHING 
-    PATTERN "Emgu.TF.Lite.Mac.sln"
     PATTERN ".git" EXCLUDE
     PATTERN "bin" EXCLUDE
     )
@@ -1165,45 +1137,28 @@ IF (HAVE_WINDESKTOP_X86 OR HAVE_WINDESKTOP_X64)
     )
 ENDIF()
 
-IF(HAVE_WINDESKTOP_LITE)
-  INSTALL(
-    DIRECTORY
-    ${CMAKE_CURRENT_SOURCE_DIR}/Solution/Windows.Desktop
-    DESTINATION Solution
-    COMPONENT emgutf_source
-    FILES_MATCHING 
-    PATTERN "Emgu.TF.Lite.sln"
-    PATTERN ".git" EXCLUDE
-    PATTERN "bin" EXCLUDE
-    )
-  INSTALL(
-    DIRECTORY
-    ${CMAKE_CURRENT_SOURCE_DIR}/Solution/Windows.Desktop
-    DESTINATION Solution
-    COMPONENT emgutf_example_source
-    FILES_MATCHING 
-    PATTERN "Emgu.TF.Lite.Example.sln"
-    PATTERN ".git" EXCLUDE
-    PATTERN "bin" EXCLUDE
-    )
-ENDIF()
-
 INSTALL(
   FILES
   "${CMAKE_CURRENT_SOURCE_DIR}/Emgu.TF.snk"
   "${CMAKE_CURRENT_SOURCE_DIR}/CommonAssemblyInfo.cs"
-  "${CMAKE_CURRENT_SOURCE_DIR}/${LICENSE_FILE_NAME}"
-  "${CMAKE_CURRENT_SOURCE_DIR}/nuget.config"
-  "${CMAKE_CURRENT_SOURCE_DIR}/components.config"
+  "${CMAKE_CURRENT_SOURCE_DIR}/Directory.Build.props"
+  "${CMAKE_CURRENT_SOURCE_DIR}/${LICENSE_FILE_NAME}" #LICENSE
+  "${CMAKE_CURRENT_SOURCE_DIR}/${EMGUTF_LICENSE_FILE}" #LICENSE.txt
   DESTINATION .
   COMPONENT emgutf_source
   )
 
+INSTALL(
+  FILES 
+  "${CMAKE_CURRENT_SOURCE_DIR}/miscellaneous/nuget_icon.png" 
+  DESTINATION "miscellaneous/" 
+  COMPONENT emgutf_source)
+
 
 SET(CPACK_GENERATOR ZIP)
-IF(WIN32 AND (NOT NETFX_CORE))
-  SET(CPACK_GENERATOR NSIS;ZIP)
-ENDIF()
+#IF(WIN32 AND (NOT NETFX_CORE))
+#  SET(CPACK_GENERATOR NSIS;ZIP)
+#ENDIF()
 SET(CPACK_ARCHIVE_COMPONENT_INSTALL ON) #enable components install for zip
 IF(CPACK_GENERATOR MATCHES "ZIP")
   SET(CPACK_COMPONENTS_ALL_IN_ONE_PACKAGE 1)
@@ -1221,6 +1176,7 @@ INSTALL(
   PATTERN "*.dll"
   PATTERN "*.dylib"
   PATTERN "*.so"
+  PATTERN "*.so.*"
   PATTERN "*.txt"
   PATTERN "*.xml"
   PATTERN ".git" EXCLUDE
@@ -1229,6 +1185,7 @@ INSTALL(
   PATTERN "Release" EXCLUDE
   PATTERN "Debug" EXCLUDE
   PATTERN "Build" EXCLUDE
+  PATTERN "signed" EXCLUDE
   PATTERN "${PROJECT_NAME}.dir" EXCLUDE
   ) 
 
@@ -1239,8 +1196,8 @@ set(CPACK_COMPONENTS_ALL
   )
 
 IF (WIN32)
-  SET(CPACK_NSIS_MODIFY_PATH OFF)
-  SET(CPACK_NSIS_INSTALL_ROOT "C:\\\\Emgu")
+  #SET(CPACK_NSIS_MODIFY_PATH OFF)
+  #SET(CPACK_NSIS_INSTALL_ROOT "C:\\\\Emgu")
   
   # ----------------------------------------------------------------------------
   #  Build the documents of Emgu TF
@@ -1256,10 +1213,10 @@ IF (WIN32)
     
   set(CPACK_PACKAGE_EXECUTABLES "" "") #http://public.kitware.com/Bug/view.php?id=7828
   
-  SET(CPACK_NSIS_CONTACT "support@emgu.com")
+  #SET(CPACK_NSIS_CONTACT "support@emgu.com")
   
   # Define MUI_TEMP that will be used for uninstalling menulinks
-  SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\n !insertmacro MUI_STARTMENU_GETFOLDER Application $MUI_TEMP")
+  #SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\n !insertmacro MUI_STARTMENU_GETFOLDER Application $MUI_TEMP")
   
   # ----------------------------------------------------------------------------
   #  Add menu link for documentations
@@ -1267,57 +1224,49 @@ IF (WIN32)
   
   
   IF(EMGU_TF_DOCUMENTATION_BUILD)
-    SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateDirectory \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Documentation\\\" ")
+    #SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateDirectory \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Documentation\\\" ")
     
     LIST(APPEND CPACK_COMPONENTS_ALL emgutf_document)
     set(CPACK_COMPONENT_EMGUTF_DOCUMENT_DISPLAY_NAME "Emgu TF Documentation")
     set(CPACK_COMPONENT_EMGUTF_DOCUMENT_DEPENDS emgutf_binary)
-    IF (HAVE_WINDESKTOP)
-      SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateShortCut \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Documentation\\\\Emgu TF Documentation.lnk\\\"  \\\"$INSTDIR\\\\Emgu.TF.Documentation.chm\\\" ")	
-      SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\n Delete \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\Documentation\\\\Emgu TF Documentation.lnk\\\" ")
-    ENDIF()
-    IF (HAVE_WINDESKTOP_LITE)
-      SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateShortCut \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Documentation\\\\Emgu TF Lite Documentation.lnk\\\"  \\\"$INSTDIR\\\\Emgu.TF.Lite.Documentation.chm\\\" ")	
-      SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\n Delete \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\Documentation\\\\Emgu TF Lite Documentation.lnk\\\" ")
-    ENDIF()
-    
-    SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\nRMDir  \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\Documentation\\\" ")
+    #IF (HAVE_WINDESKTOP)
+    #  SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateShortCut \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Documentation\\\\Emgu TF Documentation.lnk\\\"  \\\"$INSTDIR\\\\Emgu.TF.Documentation.chm\\\" ")	
+    #  SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\n Delete \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\Documentation\\\\Emgu TF Documentation.lnk\\\" ")
+    #ENDIF()
+
+    #SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\nRMDir  \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\Documentation\\\" ")
   ENDIF()
   
   # ----------------------------------------------------------------------------
   #  Add menu link for web sites
   # ----------------------------------------------------------------------------
-  LIST(APPEND CPACK_NSIS_MENU_LINKS "${EMGUTF_MAIN_WEB_URL}" "Emgu TF wiki")
-  #LIST(APPEND CPACK_NSIS_MENU_LINKS "http://www.emgu.com/forum" "Emgu TF Discussion Forums")
-  LIST(APPEND CPACK_NSIS_MENU_LINKS "https://github.com/emgucv/emgutf/issues" "Emgu TF Bug Tracking")
+  #LIST(APPEND CPACK_NSIS_MENU_LINKS "${EMGUTF_MAIN_WEB_URL}" "Emgu TF wiki")
+  #LIST(APPEND CPACK_NSIS_MENU_LINKS "https://github.com/emgucv/emgutf/discussions" "Discussions")
+  #LIST(APPEND CPACK_NSIS_MENU_LINKS "https://github.com/emgucv/emgutf/issues" "Issues Tracking")
   
   # ----------------------------------------------------------------------------
   #  Add menu link for Visual Studio solutions 
   # ----------------------------------------------------------------------------
-  SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateDirectory \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Visual Studio Solution\\\" ")
-  IF (HAVE_WINDESKTOP)
-    SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateShortCut \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Visual Studio Solution\\\\Emgu TF Visual Studio Examples.lnk\\\"  \\\"$INSTDIR\\\\Solution\\\\Windows.Desktop\\\\Emgu.TF.Example.sln\\\" ")	
-    SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\n Delete \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\Visual Studio Solution\\\\Emgu TF Visual Studio Examples.lnk\\\" ")
-  ENDIF()
-  IF (HAVE_WINDESKTOP_LITE)
-    SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateShortCut \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Visual Studio Solution\\\\Emgu TF Lite Visual Studio Examples.lnk\\\"  \\\"$INSTDIR\\\\Solution\\\\Windows.Desktop\\\\Emgu.TF.Lite.Example.sln\\\" ")	
-    SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\n Delete \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\Visual Studio Solution\\\\Emgu TF Lite Visual Studio Examples.lnk\\\" ")
-  ENDIF()
-  
-  SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\nRMDir  \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\Visual Studio Solution\\\" ")
+  #SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateDirectory \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Visual Studio Solution\\\" ")
+  #IF (HAVE_WINDESKTOP)
+  #  SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateShortCut \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Visual Studio Solution\\\\Emgu TF Visual Studio Examples.lnk\\\"  \\\"$INSTDIR\\\\Solution\\\\Windows.Desktop\\\\Emgu.TF.Example.sln\\\" ")	
+  #  SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\n Delete \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\Visual Studio Solution\\\\Emgu TF Visual Studio Examples.lnk\\\" ")
+  #ENDIF()
+
+  #SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\nRMDir  \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\Visual Studio Solution\\\" ")
   
   # ----------------------------------------------------------------------------
   #  Add menu link for Licenses 
   # ----------------------------------------------------------------------------
-  SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateDirectory \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\License\\\" ")
+  #SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateDirectory \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\License\\\" ")
   
-  SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateShortCut \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\License\\\\Emgu TF License.lnk\\\"  \\\"$INSTDIR\\\\${LICENSE_FILE_NAME}\\\" ")	
-  SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateShortCut \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\License\\\\Tensorflow License.lnk\\\"  \\\"$INSTDIR\\\\tensorflow\\\\LICENSE\\\" ")
+  #SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateShortCut \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\License\\\\Emgu TF License.lnk\\\"  \\\"$INSTDIR\\\\${LICENSE_FILE_NAME}\\\" ")	
+  #SET(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${CPACK_NSIS_EXTRA_INSTALL_COMMANDS}\nCreateShortCut \\\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\License\\\\Tensorflow License.lnk\\\"  \\\"$INSTDIR\\\\tensorflow\\\\LICENSE\\\" ")
   
-  SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\n Delete \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\License\\\\Emgu TF License.lnk\\\" ")
-  SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\n Delete \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\License\\\\Tensorflow License.lnk\\\" ")
+  #SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\n Delete \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\License\\\\Emgu TF License.lnk\\\" ")
+  #SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\n Delete \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\License\\\\Tensorflow License.lnk\\\" ")
   
-  SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\nRMDir  \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\License\\\" ")
+  #SET(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS}\nRMDir  \\\"$SMPROGRAMS\\\\$MUI_TEMP\\\\License\\\" ")
   
   #IF(EMGU_TF_EXAMPLE_BUILD AND NOT NETFX_CORE)
   #  LIST(APPEND CPACK_COMPONENTS_ALL emgutf_example_binary)
@@ -1335,6 +1284,22 @@ IF (WIN32)
   set(CPACK_COMPONENT_EMGUTF_EXAMPLE_SOURCE_DISPLAY_NAME "Emgu TF Examples (Source)")
   set(CPACK_COMPONENT_EMGUTF_EXAMPLE_SOURCE_DEPENDS emgutf_source)
   
+  IF (${CMAKE_VERSION} VERSION_GREATER "3.19.0")
+    IF(EMGU_SIGN_FOUND AND WIN32)
+	  #SET(NSIS_PACKAGE_FILE ${CMAKE_BINARY_DIR}/lib${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}.exe)
+      #MESSAGE(STATUS "CPACK_PACKAGE_FILES: ${NSIS_PACKAGE_FILE}")
+	  STRING(REGEX REPLACE "/" "\\\\\\\\" WIN_CMAKE_COMMAND "${CMAKE_COMMAND}" )
+	  STRING(REGEX REPLACE "/" "\\\\\\\\" WIN_EMGU_SIGN_EXECUTABLE "${EMGU_SIGN_EXECUTABLE}")
+	  STRING(REGEX REPLACE "/" "\\\\\\\\" WIN_PACKAGE_FILE "${CMAKE_BINARY_DIR}/lib${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}.exe")
+	  STRING(REGEX REPLACE "/" "\\\\\\\\" WIN_PACKAGE_FOLDER "${CMAKE_BINARY_DIR}/signed")
+	  STRING(REGEX REPLACE "/" "\\\\\\\\" WIN_SIGNTOOL_EXECUTABLE "${SIGNTOOL_EXECUTABLE}")
+	  #FILE(WRITE "${CMAKE_BINARY_DIR}/sign_package.txt" "add_custom_command(OUTPUT ${WIN_PACKAGE_FOLDER}/lib${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}.exe\n")
+	  FILE(WRITE "${CMAKE_BINARY_DIR}/sign_package.cmake" "EXECUTE_PROCESS(COMMAND \"${WIN_CMAKE_COMMAND}\" -E make_directory \"${CMAKE_BINARY_DIR}/signed\")\n")
+	  FILE(APPEND "${CMAKE_BINARY_DIR}/sign_package.cmake" "EXECUTE_PROCESS(COMMAND \"${WIN_EMGU_SIGN_EXECUTABLE}\" \"${WIN_PACKAGE_FILE}\" \"${WIN_PACKAGE_FOLDER}\" \"${WIN_SIGNTOOL_EXECUTABLE}\"  )")
+      LIST(APPEND CPACK_POST_BUILD_SCRIPTS "${CMAKE_BINARY_DIR}/sign_package.cmake")
+	  #LIST(APPEND CPACK_POST_BUILD_SCRIPTS "${WIN_EMGU_SIGN_EXECUTABLE} ${CMAKE_BINARY_DIR}/lib${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}.exe ${CMAKE_BINARY_DIR}/signed")
+	ENDIF()
+  ENDIF()
 ELSEIF (APPLE)
 ELSE() #LINUX
 ENDIF()  

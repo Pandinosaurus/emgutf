@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2026 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -27,20 +27,26 @@ namespace CVInterop
         {
             InitializeComponent();
 
-            TfInvoke.CheckLibraryLoaded();
+            TfInvoke.Init();
             messageLabel.Text = String.Empty;
             cameraButton.Text = _startCameraText;
 
             //DisableUI();
 
             SessionOptions so = new SessionOptions();
+            Tensorflow.ConfigProto config = new Tensorflow.ConfigProto();
             if (TfInvoke.IsGoogleCudaEnabled)
             {
-                Tensorflow.ConfigProto config = new Tensorflow.ConfigProto();
                 config.GpuOptions = new Tensorflow.GPUOptions();
                 config.GpuOptions.AllowGrowth = true;
-                so.SetConfig(config.ToProtobuf());
+
+                //Force to run on CPU
+                //config.DeviceCount["GPU"] = 0;
             }
+#if DEBUG
+            config.LogDevicePlacement = true;
+#endif
+            so.SetConfig(config.ToProtobuf());
             _inceptionGraph = new MaskRcnnInceptionV2Coco(null, so );
 
             _inceptionGraph.OnDownloadProgressChanged += OnDownloadProgressChangedEventHandler;
@@ -93,9 +99,9 @@ namespace CVInterop
             }
         }
 
-        public void OnDownloadProgressChangedEventHandler(object sender, System.Net.DownloadProgressChangedEventArgs e)
+        public void OnDownloadProgressChangedEventHandler(long? totalBytesToReceive, long bytesReceived, double? progressPercentage)
         {
-            String msg = String.Format("Downloading models, please wait... {0} of {1} bytes ({2}%) downloaded.", e.BytesReceived, e.TotalBytesToReceive, e.ProgressPercentage);
+            String msg = String.Format("Downloading models, please wait... {0} of {1} bytes ({2}%) downloaded.", bytesReceived, totalBytesToReceive, progressPercentage);
             if (InvokeRequired)
             {
                 this.Invoke((MethodInvoker)(() =>
@@ -135,7 +141,7 @@ namespace CVInterop
 
             Emgu.TF.TensorConvert.ReadTensorFromMatBgr(m, _imageTensor);
 
-            MaskRcnnInceptionV2Coco.RecognitionResult[] results;
+            MaskRcnnInceptionV2Coco.RecognitionResult[][] results;
             if (_coldSession)
             {
                 //First run of the recognition graph, here we will compile the graph and initialize the session
@@ -149,7 +155,7 @@ namespace CVInterop
             results = _inceptionGraph.Recognize(_imageTensor);
             sw.Stop();
             int goodResultCount = 0;
-            foreach (var r in results)
+            foreach (var r in results[0])
             {
                 if (r.Probability > 0.5)
                 {

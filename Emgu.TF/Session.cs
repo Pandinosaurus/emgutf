@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2026 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -43,12 +43,14 @@ namespace Emgu.TF
 
         /// <summary>
         /// Create a Session from a SavedModel. If successful, populates the internal graph with the contents of the Graph and
-        /// <paramref name="metaGraphDef"/> with the MetaGraphDef of the loaded model.
+        /// with the MetaGraphDef of the loaded model.
         /// </summary>
         /// <param name="exportDir">Must be set to the path of the exported SavedModel.</param>
         /// <param name="tags">Must include the set of tags used to identify one MetaGraphDef in the SavedModel. Could be "serve", "tpu", "gpu", "train" or other values.</param>
         /// <param name="sessionOptions">Session options</param>
-        /// <param name="runOptions"></param>
+        /// <param name="runOptions">
+        /// Optional runtime options for the session.
+        /// </param>
         /// <param name="status">The status</param>
         public Session(
             String exportDir,
@@ -179,10 +181,11 @@ namespace Emgu.TF
         /// <param name="inputValues">The input values</param>
         /// <param name="outputs">The output nodes</param>
         /// <param name="targetOperations">Optional target operations</param>
-        /// <param name="runOptions"></param>
+        /// <param name="runOptions">
         /// May be NULL, in which case it will be ignored; or
         /// non-NULL, in which case it must point to a `TF_Buffer` containing the
         /// serialized representation of a `RunOptions` protocol buffer.
+        /// </param>
         /// <param name="runMetadata">
         /// May be NULL, in which case it will be ignored; or
         /// non-NULL, in which case it must point to an empty, freshly allocated
@@ -191,7 +194,15 @@ namespace Emgu.TF
         /// </param>
         /// <param name="status">The status</param>
         /// <returns>On success, the tensors corresponding to outputs[0,noutputs-1] are placed in the returned Tensors.</returns>
-        public Tensor[] Run(Output[] inputs, Tensor[] inputValues, Output[] outputs, Operation[] targetOperations = null, Buffer runOptions = null, Buffer runMetadata = null, Status status = null)
+        /// <remarks>If you wasn't sure about the input and output names, call "saved_model_cli show --dir {export_path} --all" to list all input and output names.</remarks>
+        public Tensor[] Run(
+            Output[] inputs,
+            Tensor[] inputValues,
+            Output[] outputs,
+            Operation[] targetOperations = null,
+            Buffer runOptions = null,
+            Buffer runMetadata = null,
+            Status status = null)
         {
             IntPtr[] inputOps = Array.ConvertAll(inputs, i => i.Operation.Ptr);
             int[] inputIdx = Array.ConvertAll(inputs, i => i.Index);
@@ -329,10 +340,10 @@ namespace Emgu.TF
     public static partial class TfInvoke
     {
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern IntPtr tfeNewSession(IntPtr graph, IntPtr opts, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern IntPtr tfeLoadSessionFromSavedModel(
             IntPtr sessionOptions,
             IntPtr runOptions,
@@ -343,13 +354,13 @@ namespace Emgu.TF
             IntPtr metaGraphDef,
             IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeDeleteSession(ref IntPtr session, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeCloseSession(IntPtr session, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeSessionRun(
             IntPtr session, IntPtr runOptions,
             IntPtr inputOps, IntPtr inputIdx, IntPtr inputValues, int ninputs,
@@ -357,7 +368,7 @@ namespace Emgu.TF
             IntPtr targetOpers, int ntargets,
             IntPtr runMetadata, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeSessionListDevices(IntPtr session, IntPtr nameBuffer, IntPtr typeBuffer, IntPtr memorySizeBuffer, IntPtr status);
     }
 }

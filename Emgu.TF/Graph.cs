@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2026 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 using System;
@@ -157,6 +157,7 @@ namespace Emgu.TF
         /// </summary>
         /// <return>The serialized VersionDef proto for this graph.</return>
         /// <param name="status">The status</param>
+        /// <returns>A <see cref="Buffer"/> containing the serialized VersionDef proto for this graph.</returns>
         public Buffer Versions(Status status = null)
         {
             using (StatusChecker checker = new StatusChecker(status))
@@ -257,19 +258,19 @@ namespace Emgu.TF
     public static partial class TfInvoke
     {
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern IntPtr tfeNewGraph();
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeDeleteGraph(ref IntPtr buffer);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeGraphImportGraphDef(IntPtr graph, IntPtr graph_def, IntPtr options, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeGraphToGraphDef(IntPtr graph, IntPtr outputGraphDef, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern IntPtr tfeNewOperation(
             IntPtr graph,
             [MarshalAs(StringMarshalType)]
@@ -277,25 +278,25 @@ namespace Emgu.TF
             [MarshalAs(StringMarshalType)]
             String opName);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern IntPtr tfeGraphOperationByName(
             IntPtr graph,
             [MarshalAs(StringMarshalType)]
             String opName);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern IntPtr tfeGraphNextOperation(IntPtr graph, ref IntPtr pos);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeGraphSetTensorShape(IntPtr graph, IntPtr outputOperation, int idx, IntPtr dims, int numDims, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern int tfeGraphGetTensorNumDims(IntPtr graph, IntPtr outputOperation, int idx, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeGraphGetTensorShape(IntPtr graph, IntPtr outputOperation, int idx, IntPtr dims, int numDims, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern void tfeGraphGetOpDef(
             IntPtr graph,
             [MarshalAs(StringMarshalType)]
@@ -303,10 +304,10 @@ namespace Emgu.TF
             IntPtr outputOpDef, 
             IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern IntPtr tfeGraphVersions(IntPtr graph, IntPtr status);
 
-        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TFCallingConvention)]
+        [DllImport(ExternLibrary, CallingConvention = TfInvoke.TfCallingConvention)]
         internal static extern int tfeGraphNumFunctions(IntPtr g);
     }
 }

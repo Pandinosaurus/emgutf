@@ -1,5 +1,5 @@
 ﻿//----------------------------------------------------------------------------
-//  Copyright (C) 2004-2020 by EMGU Corporation. All rights reserved.       
+//  Copyright (C) 2004-2026 by EMGU Corporation. All rights reserved.       
 //----------------------------------------------------------------------------
 
 #if __IOS__
@@ -22,7 +22,7 @@ namespace Emgu.Models
         /// Read an UIImage, covert the data and save it to the native pointer
         /// </summary>
         /// <typeparam name="T">The type of the data to covert the image pixel values to. e.g. "float" or "byte"</typeparam>
-        /// <param name="imageOriginal">The input image</param>
+        /// <param name="image">The input image</param>
         /// <param name="dest">The native pointer where the image pixels values will be saved to.</param>
         /// <param name="inputHeight">The height of the image, must match the height requirement for the tensor</param>
         /// <param name="inputWidth">The width of the image, must match the width requirement for the tensor</param>
@@ -31,7 +31,7 @@ namespace Emgu.Models
         /// <param name="flipUpSideDown">If true, the image needs to be flipped up side down</param>
         /// <param name="swapBR">If true, will flip the Blue channel with the Red. e.g. If false, the tensor's color channel order will be RGB. If true, the tensor's color channle order will be BGR </param>
         public static void ReadImageToTensor<T>(
-            UIImage imageOriginal,
+            UIImage image,
             IntPtr dest,
             int inputHeight = -1,
             int inputWidth = -1,
@@ -41,88 +41,72 @@ namespace Emgu.Models
             bool swapBR = false)
             where T : struct
         {
-            if (flipUpSideDown)
-                throw new NotImplementedException("Flip Up Side Down is Not implemented");
 
-            UIImage image;
+            if (inputHeight <= 0)
+                inputHeight = (int)image.Size.Height;
 
-            if (inputHeight > 0 || inputWidth > 0)
+            if (inputWidth <= 0)
+                inputWidth = (int)image.Size.Width;
+
+
+            int[] intValues = new int[inputWidth * inputHeight];
+            System.Runtime.InteropServices.GCHandle handle = System.Runtime.InteropServices.GCHandle.Alloc(intValues, System.Runtime.InteropServices.GCHandleType.Pinned);
+            using (CGImage cgimage = image.CGImage)
+            using (CGColorSpace cspace = CGColorSpace.CreateDeviceRGB())
+            using (CGBitmapContext context = new CGBitmapContext(
+                handle.AddrOfPinnedObject(),
+                inputWidth,
+                inputHeight,
+                8,
+                inputWidth * 4,
+                cspace,
+                CGImageAlphaInfo.PremultipliedLast
+                ))
             {
-                image = imageOriginal.Scale(new CGSize(inputWidth, inputHeight));
-                //image.Dispose();
-                //image = resized;
-            } else
-            {
-                image = imageOriginal;
+                context.DrawImage(new CGRect(new CGPoint(), new CGSize(inputWidth, inputHeight)), cgimage);
+
             }
 
-            try
+            if (typeof(T) == typeof(float))
             {
-                int[] intValues = new int[(int)(image.Size.Width * image.Size.Height)];
-                float[] floatValues = new float[(int)(image.Size.Width * image.Size.Height * 3)];
-                System.Runtime.InteropServices.GCHandle handle = System.Runtime.InteropServices.GCHandle.Alloc(intValues, System.Runtime.InteropServices.GCHandleType.Pinned);
-                using (CGImage cgimage = image.CGImage)
-                using (CGColorSpace cspace = CGColorSpace.CreateDeviceRGB())
-                using (CGBitmapContext context = new CGBitmapContext(
+                Emgu.TF.Util.Toolbox.Pixel32ToPixelFloat(
                     handle.AddrOfPinnedObject(),
-                    (nint)image.Size.Width,
-                    (nint)image.Size.Height,
-                    8,
-                    (nint)image.Size.Width * 4,
-                    cspace,
-                    CGImageAlphaInfo.PremultipliedLast
-                    ))
-                {
-                    context.DrawImage(new CGRect(new CGPoint(), image.Size), cgimage);
-
-                }
-                handle.Free();
-
-                if (swapBR)
-                {
-                    for (int i = 0; i < intValues.Length; ++i)
-                    {
-                        int val = intValues[i];
-                        floatValues[i * 3 + 0] = ((val & 0xFF) - inputMean) * scale;
-                        floatValues[i * 3 + 1] = (((val >> 8) & 0xFF) - inputMean) * scale;
-                        floatValues[i * 3 + 2] = (((val >> 16) & 0xFF) - inputMean) * scale;
-                    }
-                }
-                else
-                {
-                    for (int i = 0; i < intValues.Length; ++i)
-                    {
-                        int val = intValues[i];
-                        floatValues[i * 3 + 0] = (((val >> 16) & 0xFF) - inputMean) * scale;
-                        floatValues[i * 3 + 1] = (((val >> 8) & 0xFF) - inputMean) * scale;
-                        floatValues[i * 3 + 2] = ((val & 0xFF) - inputMean) * scale;
-                    }
-                }
-
-                if (typeof(T) == typeof(float))
-                {
-                    Marshal.Copy(floatValues, 0, dest, floatValues.Length);
-                }
-                else if (typeof(T) == typeof(byte))
-                {
-                    //copy float to bytes
-                    byte[] byteValues = new byte[floatValues.Length];
-                    for (int i = 0; i < floatValues.Length; i++)
-                        byteValues[i] = (byte)floatValues[i];
-                    Marshal.Copy(byteValues, 0, dest, byteValues.Length);
-                }
-                else
-                {
-                    throw new NotImplementedException(String.Format("Destination data type {0} is not supported.", typeof(T).ToString()));
-                }
+                    inputWidth,
+                    inputHeight,
+                    inputMean,
+                    scale,
+                    flipUpSideDown,
+                    swapBR,
+                    dest
+                    );
             }
-            finally
+            else if (typeof(T) == typeof(byte))
             {
-                if (image != imageOriginal)
-                    image.Dispose();
+                Emgu.TF.Util.Toolbox.Pixel32ToPixelByte(
+                    handle.AddrOfPinnedObject(),
+                    inputWidth,
+                    inputHeight,
+                    inputMean,
+                    scale,
+                    flipUpSideDown,
+                    swapBR,
+                    dest
+                    );
             }
+            else
+            {
+                throw new NotImplementedException(String.Format("Destination data type {0} is not supported.", typeof(T).ToString()));
+            }
+            handle.Free();
+
         }
 
+        /// <summary>
+        /// Draws annotations on a given UIImage.
+        /// </summary>
+        /// <param name="uiimage">The UIImage to draw annotations on.</param>
+        /// <param name="annotations">An array of Annotation objects representing the annotations to be drawn.</param>
+        /// <returns>A new UIImage with the annotations drawn on it.</returns>
         public static UIImage DrawAnnotations(UIImage uiimage, Annotation[] annotations)
         {
             UIGraphics.BeginImageContextWithOptions(uiimage.Size, false, 0);
@@ -139,10 +123,10 @@ namespace Emgu.Models
                     (int)uiimage.Size.Width,
                     (int)uiimage.Size.Height);
                 CGRect cgRect = new CGRect(
-                                           (nfloat)rects[0],
-                                           (nfloat)rects[1],
-                                           (nfloat)(rects[2] - rects[0]),
-                                           (nfloat)(rects[3] - rects[1]));
+                                           (NFloat)rects[0],
+                                           (NFloat)rects[1],
+                                           (NFloat)(rects[2] - rects[0]),
+                                           (NFloat)(rects[3] - rects[1]));
                 context.AddRect(cgRect);
                 context.DrawPath(CGPathDrawingMode.Stroke);
             }
@@ -155,7 +139,7 @@ namespace Emgu.Models
                     (int)uiimage.Size.Width,
                     (int)uiimage.Size.Height);
                 context.SelectFont("Helvetica", 18, CGTextEncoding.MacRoman);
-                context.SetFillColor((nfloat)1.0, (nfloat)0.0, (nfloat)0.0, (nfloat)1.0);
+                context.SetFillColor((NFloat)1.0, (NFloat)0.0, (NFloat)0.0, (NFloat)1.0);
                 context.SetTextDrawingMode(CGTextDrawingMode.Fill);
                 context.ShowTextAtPoint(rects[0], uiimage.Size.Height - rects[1], annotations[i].Label);
             }
@@ -168,7 +152,7 @@ namespace Emgu.Models
         /// Read the file and draw rectangles on it.
         /// </summary>
         /// <param name="fileName">The name of the file.</param>
-        /// <param name="annotations">Annotations to be add to the image. Can consist of rectangles and labels</param>
+        /// <param name="annotations">Annotations to be added to the image. Can consist of rectangles and labels</param>
         /// <returns>The image in Jpeg stream format</returns>
         public static JpegData ImageFileToJpeg(String fileName, Annotation[] annotations = null)
         {
@@ -176,8 +160,8 @@ namespace Emgu.Models
 
             UIImage imgWithRect = DrawAnnotations(uiimage, annotations);
             var jpegData = imgWithRect.AsJPEG();
-			byte[] jpeg = new byte[jpegData.Length];
-			System.Runtime.InteropServices.Marshal.Copy(jpegData.Bytes, jpeg, 0, (int)jpegData.Length);
+            byte[] jpeg = new byte[jpegData.Length];
+            System.Runtime.InteropServices.Marshal.Copy(jpegData.Bytes, jpeg, 0, (int)jpegData.Length);
             JpegData result = new JpegData();
             result.Raw = jpeg;
             result.Width = (int)uiimage.Size.Width;
@@ -237,10 +221,10 @@ namespace Emgu.Models
             int inputHeight = -1,
             int inputWidth = -1,
             float inputMean = 0.0f,
-            float scale = 1.0f, 
+            float scale = 1.0f,
             bool flipUpSideDown = false,
             bool swapBR = false)
-            where T: struct
+            where T : struct
         {
             if (!File.Exists(fileName))
                 throw new FileNotFoundException(String.Format("File {0} do not exist.", fileName));
@@ -248,8 +232,8 @@ namespace Emgu.Models
             UIImage image = new UIImage(fileName);
 
             ReadImageToTensor<T>(image, dest, inputHeight, inputWidth, inputMean, scale, flipUpSideDown, swapBR);
-                    }
-}
+        }
+    }
 }
 
 #endif
